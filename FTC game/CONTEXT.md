@@ -1,0 +1,405 @@
+# FTC DECODE Match Simulator — Project Context
+
+A single-robot, single-team 2D match simulator for the FIRST Tech Challenge 2025–2026 game "DECODE," built with **Python 3 + Pygame**.
+
+---
+
+## Project Structure
+
+```
+FTC game/
+├── main.py              # Entry point, window creation, game loop, physics thread lifecycle
+├── config.py            # Colors, CONFIG dict, layout constants, math helpers
+├── game_state.py        # Data classes: Artifact, FlyingArtifact, Robot, TeamState, GameState
+├── drawing.py           # Rendering: field, artifacts, robot, HUD, match-end overlay (with caching)
+├── game_logic.py        # Timer, scoring, 2D artifact physics, flying updates, robot constraints, park status, physics thread
+├── input_handler.py     # Keyboard and gamepad input, pause/start/reset controls
+└── CONTEXT.md           # This file
+```
+
+No external dependencies beyond Python stdlib and `pygame`.
+
+---
+
+## Module Breakdown
+
+### `main.py` — Entry Point
+
+- Initializes Pygame, creates a **resizable window** (`pygame.RESIZABLE`) titled `"FTC DECODE — Robot simulator by TEAM ZENITH 19084"`
+- Creates a fixed-size **virtual canvas** (`1050 × 730`) that all drawing targets
+- Each frame: input → timer → turret update → render (under lock) → smoothscale to window (aspect-ratio-preserving with black letterbox bars)
+- Uses `clock.tick_busy_loop(fps)` for precise frame pacing
+- Calls `init_drawing()` after `pygame.init()` to initialize fonts (must happen after pygame init)
+- Detects and initializes joysticks on startup via `input_handler.init_joysticks()`
+- **Physics thread**: spawns a background thread via `start_physics_thread(state)` that runs `update_physics()` at 60 Hz under `_physics_lock`
+- **Thread safety**: Acquires `_physics_lock` during render to prevent physics mutations mid-draw; reset is also performed under lock
+- **Turret tracking**: `update_turret_angle(state)` runs on the main thread every frame (outside lock) so the turret always tracks the goal in real time
+- `handle_input()` returns `True` when reset is requested; main.py performs `state.reset()` under the physics lock
+
+### `config.py` — Constants
+
+**Color palette** (all RGB/RGBA tuples):
+| Constant | Usage |
+|---|---|
+| `CHARCOAL`, `DARK_GRAY`, `BG_DARK` | Field background, grid lines, HUD panel |
+| `ROBOT_PURPLE`, `GLOW_PURPLE` | Robot fill and selection glow |
+| `GOAL_GOLD`, `GOAL_DARK` | Goal outline and fill |
+| `RAMP_DARK` | Ramp background |
+| `PURPLE` / `GREEN` | Artifact colors (color "P" and "G") |
+| `PURPLE_DIM` / `GREEN_DIM` | Dimmed artifact colors |
+| `SLOT_EMPTY`, `SLOT_BORDER` | Ramp classifier slot colors |
+| `GOLD`, `ORANGE`, `SOFT_WHITE` | UI text and highlights |
+| `PARK_GREEN` | Parking status indicator (full park) |
+| `RED_ACCENT` | Match-end overlay (not parked) |
+| `LIGHT_GRAY` | Available for general use |
+| `YELLOW_ACCENT`, `TEAL_ACCENT` | Available for general use |
+
+**`CONFIG` dict** — All tunable magic numbers:
+| Key | Value | Purpose |
+|---|---|---|
+| `field_size_px` | 720 | Field side length in pixels (144" at 5 px/in) |
+| `fps` | 120 | Target frames per second |
+| `teleop_time` | 120 | Match duration in seconds |
+| `endgame_time` | 20 | Last N seconds where phase shows "ENDGAME" |
+| `robot_speed` | 280 | Robot movement speed (px/s) |
+| `robot_size` | 60 | Robot square side length (px) |
+| `flying_speed` | 350 | Launched artifact travel speed (px/s) |
+| `pickup_radius` | 45 | Max distance to pick up an artifact |
+| `pickup_cone_angle` | 120 | Front cone for pickup (degrees) |
+| `rotation_speed` | 300 | Robot rotation speed (deg/s) |
+| `gate_range` | 45 | Max distance to interact with gate |
+| `gate_open_duration` | 2.0 | Seconds before gate auto-closes |
+| `spike_mark_count` | 6 | Number of spike marks |
+| `ramp_slots` | 9 | Number of classifier slots per ramp |
+| `max_hold` | 3 | Max artifacts robot can carry |
+| `respawn_delay` | 5.0 | Artifact respawn delay (unused) |
+| `artifact_friction` | 0.08 | Exponential drag per frame (v *= f^dt) |
+| `artifact_bounce` | 0.45 | Wall/structure restitution |
+| `artifact_robot_bounce` | 0.90 | Robot-artifact collision restitution |
+| `artifact_artifact_bounce` | 0.50 | Artifact-artifact restitution |
+| `artifact_min_speed` | 4.0 | Speed below which artifacts stop |
+| `robot_push_force` | 600.0 | Push force when robot contacts artifact |
+| `artifact_radius` | 7 | Radius of artifact circles |
+| `goal_w` / `goal_h` | 130 | Goal rectangle size |
+| `loading_zone_size` | 100 | Loading zone square size |
+| `base_size` | 80 | Base zone square size |
+| `spike_cols` | 2 | Spike mark columns |
+| `spike_rows` | 3 | Spike mark rows |
+| `ramp_h` | 14 | Ramp rectangle height (px) |
+| `depot_h` | 20 | Depot rectangle height (px) |
+| `field_margin_left` | 5 | Left margin between field and canvas edge |
+| `field_margin_top` | 5 | Top margin between field and canvas edge |
+| `hud_width` | 320 | HUD panel width |
+| `hud_margin` | 5 | Gap between field and HUD panel |
+
+**Derived layout constants** (computed from CONFIG):
+| Constant | Value | Meaning |
+|---|---|---|
+| `VW`, `VH` | 1050, 730 | Virtual canvas dimensions |
+| `FX`, `FY` | 5, 5 | Field top-left corner on canvas |
+| `FS` | 720 | Field size (alias for `field_size_px`) |
+| `HX`, `HW` | 730, 320 | HUD panel left edge and width |
+
+**Helpers**: `dist(a, b)`, `clamp(v, lo, hi)`, `lerp(a, b, t)`
+
+**Global render state**: `scale_factor = 1.0`, `render_surf = None` (set by main.py)
+
+---
+
+### `game_state.py` — Data Classes
+
+#### `Artifact`
+- `x, y` — position on canvas
+- `vx, vy` — 2D velocity for physics integration
+- `color` — `"P"` (purple) or `"G"` (green)
+- `on_field` — `True` if available for pickup
+- `zone` — `"spike"`, `"loading"`, or `"alliance"`
+- `respawn_timer` — unused (no respawning)
+- `index` — position within spike zone
+
+#### `FlyingArtifact`
+- `x, y` — current position (animated toward target)
+- `target_x, target_y` — goal center
+- `color`, `speed`, `active`
+- `trail` — list of recent positions for trail rendering (capped at `MAX_TRAIL`)
+- `scoring: bool` — `True` if launched from launch zone
+- `full_set: bool` — `True` if robot held 3 artifacts at launch
+- `MAX_TRAIL: ClassVar[int] = 18` — max trail length (class variable, not instance field)
+
+#### `GateClearAnim`
+- `x, y`, `target_x, `target_y` — animation start and end positions
+- `color` — artifact color being cleared
+- `progress: float` — animation progress (0.0 to 1.0)
+- `active: bool` — whether animation is still running
+
+#### `Robot`
+- `x, y`, `speed`, `angle` (0 = up, radians)
+- `turret_angle: float` — world-space radians, auto-updated toward goal each frame via shortest-path wrap-around (instant snap, no smoothing)
+- `vx, vy` — velocity from input (used for physics push)
+- `drive_mode` — `"robot"` or `"field"` (default: `"field"`)
+- `holding` — list of `Artifact` objects being carried (max 3)
+- `can_pickup()` — returns `True` if holding < 3
+
+#### `TeamState`
+- `ramp` — `List[Optional[str]]` of length 9 (`None` = empty, `"P"`/`"G"` = occupied)
+- `overflow_held: List[str]` — overflow artifacts stored in ramp (released on gate open)
+- `gate_open`, `gate_timer` — gate state
+- `classified`, `overflow`, `depot` — artifact counts
+- `pattern_pts`, `base_pts` — end-of-match scores
+- `total_score()` — `classified×3 + overflow + depot + pattern + base`
+- `add_to_ramp(color)` — places in first empty slot, or appends to `overflow_held` + increments overflow/depot
+- `clear_ramp()` — empties ramp + overflow_held, returns all colors
+
+#### `GameState`
+- `phase` — `"TELEOP"` → `"ENDGAME"` → `"FINISHED"`
+- `timer` — seconds remaining
+- `timer_running: bool` — `False` by default; timer does NOT auto-start on launch or reset
+- `motif` — `["G","P","P"]`, `["P","G","P"]`, or `["P","P","G"]` (random at reset)
+- `team` — `TeamState` instance
+- `robot` — `Robot` instance (default drive_mode = `"field"`)
+- `artifacts` — all `Artifact` instances (initial 27 + gate-spawned)
+- `flying` — active `FlyingArtifact` list
+- `park_status: str` — `"NONE"`, `"PARTIAL"`, or `"FULL"` (live-updated every frame)
+- `intake_active: bool` — toggle state for intake; `True` = continuously picking up artifacts in range
+- **`_setup()`** — shared init logic called by both `__init__` and `reset()`; calls `rebuild_obstacle_cache(self)` at the end
+- **`reset()`** — calls `_setup()` to reinitialize all state
+- **`_init_artifacts()`** — creates 27 artifacts:
+  - **18 spike-mark** artifacts (2 cols × 3 rows, each row has a GPP/PGP/PPG arrangement)
+  - **3 loading-zone** artifacts (PGP, no respawn)
+  - **6 alliance-area** artifacts (4P+2G random)
+- **`goal_rect()`**, `ramp_rect()`, `depot_rect()`, `gate_rect()`, `loading_rect()`, `base_rect()` — computed `pygame.Rect` helpers
+- **`in_launch_zone(x, y)`** — triangular zone at top of field
+- **`nearest_artifact(x, y, radius)`** — finds closest pickup-able artifact
+- **`get_ramp_scatter_positions(state)`** (module-level) — returns 21 `(x, y)` positions (18 spike-mark + 3 loading zone) for gate-release teleport
+
+---
+
+### `drawing.py` — Rendering
+
+**Initialization:**
+- `init_drawing()` — must be called once after `pygame.init()`; initializes all fonts
+- `init_fonts` — backward-compatible alias for `init_drawing()`
+- `_make_font(name, size)` — helper to create a system font with fallback to default
+
+**Font sizes** (Segoe UI, with fallback):
+| Name | Size | Usage |
+|---|---|---|
+| `f_micro` | 14 | Spike labels |
+| `f_tiny` | 17 | Score lines, zone labels, launch zone indicator, parking status label |
+| `f_small` | 21 | Section headers, robot label |
+| `f_hud_s` | 26 | "SCORE" heading |
+| `f_hud` | 34 | Phase text |
+| `f_timer` | 56 | Countdown clock |
+| `f_huge` | 68 | "MATCH OVER" title |
+
+**Caching:**
+
+Three independent caches improve rendering performance:
+
+1. **Field surface cache** — Static field elements (background, grid, loading zone, goal outline, ramp outline, gate outline, depot, spike marks, launch zone triangle) rendered once to `_field_surface`. Dynamic elements (park status pulse/glow, ramp slot fill, gate open/closed state, drive mode badge) are drawn on top each frame. Cache is rebuilt automatically on first draw. Invalidated via `_invalidate_field_cache()`. Park-specific cache state tracked in `_field_cache_park`.
+
+2. **Robot render cache** — The full 96×96 SRCALPHA robot surface is cached in a dict keyed on `(angle_deg, turret_deg, held_colors)` via `_robot_cache_key(r)`. Turret angle is quantized to 2° increments (sub-pixel difference at the turret's small size) to maintain good cache hit rate while tracking the goal. FIFO eviction via `collections.deque` caps the cache at 360 entries to prevent unbounded memory growth. Surface built by `_build_robot_surface(r)`.
+
+3. **Match-end overlay cache** — The semi-transparent "MATCH OVER" overlay is rendered once to `_end_overlay` by `_build_end_overlay(state)` when the phase transitions to FINISHED. Invalidated (set to `None`) on reset so it rebuilds on next match end.
+
+**Drawing functions** (all take `(screen, state)`):
+
+| Function | Draws |
+|---|---|
+| `draw_field()` | Static field elements from cache + dynamic per-frame: drive mode badge, base zone park status (fill + pulse/glow), ramp slot fill, gate open/closed state |
+| `draw_artifacts()` | Field artifacts (with glow and motion ghost), flying artifacts (each as individual colored circle with alpha-blended fading trail capped at `MAX_TRAIL`) |
+| `draw_robot()` | **ZENITH (FTC 19084) layered render with cache**: 96×96 SRCALPHA surface, drawn in 12 layers then rotated and blitted. Layers: drop shadow, 4 mecanum wheels with blue rollers, silver open truss frame with X-braces, purple 3D-printed infill panels, blue LED glow, green REV hub status LED, black corrugated intake hose arc, front intake rollers, turret base ring, **goal-tracking turret** (rotated independently of body via `turret_angle`, always points at goal), team labels, gold forward triangle. Held artifacts are baked onto the surface before rotation so they stay glued to the robot. Cache key includes turret angle so turret tracks goal even during pure translation. |
+| `draw_hud()` | Dark panel on right side: phase label, STOPPED/PAUSED badge, countdown timer (muted gray when paused), motif circles, launch zone indicator (✓/✗), intake status (ON/OFF), score breakdown, 9-slot ramp display, gate state, parking status 3-segment bar with status label |
+| `draw_match_end()` | Cached semi-transparent overlay with "MATCH OVER", final score, breakdown with colored parking result, F5/ESC prompt |
+
+---
+
+### `game_logic.py` — Update Functions
+
+**Module-level infrastructure:**
+- `_physics_lock` — `threading.Lock` protecting shared state between main and physics threads
+- `_physics_running` — flag controlling the background physics loop
+- `_physics_thread` — reference to the daemon physics thread
+- `_cached_obs_rect` — cached merged goal+depot obstacle rect, rebuilt only on game reset via `rebuild_obstacle_cache(state)`
+
+**Core update functions:**
+
+| Function | Responsibility |
+|---|---|
+| `update_timer(state, dt)` | Decrements timer only if `timer_running`; at 20s switches to `ENDGAME`; at 0s triggers scoring and sets `FINISHED` |
+| `score_pattern(state)` | Each ramp slot matching `motif[i % 3]` → +2 points |
+| `score_base(state)` | Robot fully inside base → 10 pts, partial → 5 pts |
+| `update_artifact_physics(state, dt)` | 2D physics with early-exit optimization: velocity integration, exponential friction, field-wall bounce with restitution, goal+depot merged-obstacle containment push-out + bounce, artifact–artifact collision resolution, robot–artifact push with restitution + extra push force. Uses cached obstacle rect and local variable aliases for performance. |
+| `constrain_robot(state)` | Pushes robot out of cached obstacle rect (iterative resolve, capped at `_CONSTRAIN_MAX_ITER = 8` iterations) |
+| `update_turret_angle(state)` | Snaps turret angle to point at goal. **Runs on the main thread every frame** (not in physics thread). |
+| `_update_flying_and_gate(state, dt)` | Moves flying artifacts toward goal, handles scoring on arrival, updates gate auto-close timer. Runs under `_physics_lock`. |
+| `update_physics(state, dt)` | Runs one frame of physics simulation under `_physics_lock`: park status, robot constraint, artifact physics, flying artifacts, gate timer. Does NOT update turret angle. |
+| `get_park_status(state)` | Returns `"NONE"`, `"PARTIAL"`, or `"FULL"` based on robot rect vs base rect containment |
+| `update_park_status(state)` | Writes `get_park_status()` result to `state.park_status` |
+
+**Turret tracking:**
+- Each frame, the target angle is computed as `atan2(gx, -gy)` from robot to goal center
+- Shortest-path wrap-around: `diff = (target - current + π) % (2π) - π` prevents the 360° spin when crossing the goal's vertical centerline
+- Snaps instantly to target (no smoothing factor) — turret always points at the goal
+- **Runs on the main thread** so turret always tracks in real time regardless of physics thread timing
+
+**Physics thread:**
+- `_physics_thread_target(state)` — background loop running at 60 Hz, calls `update_physics(state, dt)` under `_physics_lock`
+- `start_physics_thread(state)` — spawns daemon thread, returns it
+- `stop_physics_thread()` — signals thread to stop, joins with 2s timeout
+- Uses its own `pygame.time.Clock()` for independent dt calculation
+
+**Cached obstacle rect:**
+- `_cached_obs_rect` — module-level `pygame.Rect` storing the merged goal+depot obstacle
+- `rebuild_obstacle_cache(state)` — recomputes from `state.goal_rect()` and `state.depot_rect()`; called once in `GameState._setup()`
+- `_get_obs_rect()` — returns cached rect (with zero-size fallback if cache not yet built)
+
+**Scoring rules:**
+| Event | Points | Notes |
+|---|---|---|
+| Artifact classified on ramp | +3 | Only if in launch zone |
+| Overflow / Depot | +1 each | Only if in launch zone |
+| Pattern match (per matching slot) | +2 | Evaluated at match end |
+| Full base return | +10 | Robot entirely inside base rect at match end |
+| Partial base return | +5 | Robot partially in base rect at match end |
+
+**Physics details:**
+- Exponential friction: `v *= friction^dt` where `friction = 0.08` → near-instant stops
+- Field walls: restitution `0.45`, push out and reverse velocity component
+- Goal+depot obstacle: single merged rect (cached), artifacts pushed to nearest edge with bounce `0.45`; outside-edge collision via clamp-based normal push
+- Artifact–artifact: overlap separation `0.5` each, impulse with restitution `0.50`; **both-stationary early-exit**: skips pair entirely if both artifacts have zero velocity
+- Robot–artifact: overlap pushes artifact, impulse with restitution `0.90`; extra `push_force = 600` applied as velocity bias when speed is low
+- **Early-exit optimization**: Stationary artifacts (`vx == 0, vy == 0`) that are far from the robot (beyond `rob_r + R + 20` px) are skipped entirely
+- **Local variable aliases**: All CONFIG dict lookups hoisted to locals; robot position/velocity cached outside loops to avoid repeated attribute access
+
+---
+
+### `input_handler.py` — Controls
+
+Processes all Pygame events once per frame. Supports keyboard and gamepad simultaneously. Joystick objects cached at module level via `init_joysticks()` for reliable reconnection.
+
+**Internal helper functions:**
+| Function | Purpose |
+|---|---|
+| `_handle_field_drive(r, keys, dt)` | Process WASD movement in field-oriented mode |
+| `_handle_robot_drive(r, keys, dt)` | Process WASD movement in robot-oriented mode |
+| `_launch_held(state, r)` | Launch all held artifacts toward the goal |
+| `_toggle_gate(state, r)` | Toggle gate open if robot is within gate_range |
+| `_try_pickup(state, r, in_front)` | Attempt to pick up nearest artifact in front cone |
+| `_handle_gamepad(state, r, joy, events, dt, in_front)` | Process gamepad stick, trigger, and button input |
+
+**Return value:**
+- `handle_input(state, dt)` returns `True` if a reset was requested (F5 / gamepad Back); `None` otherwise. The caller performs the actual reset under the physics lock.
+
+**Timer controls** (always active, even when paused/stopped):
+| Key | Action |
+|---|---|
+| `F5` | Reset game (timer stops) |
+| `F6` | Start timer (only works when stopped) |
+| `Space` | Pause / Resume toggle |
+| `ESC` | Quit |
+
+**Robot** has a facing direction (`angle`, 0 = up). Default `drive_mode = "field"`:
+- In field mode: W/S/A/D move in world axes regardless of facing
+- In robot mode: W = forward (nose direction), S = backward, A/D strafe left/right perpendicular to facing
+- Left/Right arrows rotate in place
+- Pickup only works for artifacts in the front cone (120°)
+
+**Keyboard:**
+| Key | Action |
+|---|---|
+| `W` | Move forward (facing direction in robot mode, world-up in field mode) |
+| `S` | Move backward (facing direction in robot mode, world-down in field mode) |
+| `A` | Strafe left (robot mode) / World left (field mode) |
+| `D` | Strafe right (robot mode) / World right (field mode) |
+| `←` | Rotate left |
+| `→` | Rotate right |
+| `E` | Toggle intake on/off (when on, continuously picks up artifacts in front cone) |
+| `Q` | Launch ALL held artifacts toward goal (any number) |
+| `T` | Toggle gate open (must be within gate_range of gate) |
+| `R` | Toggle drive mode (`robot` ↔ `field`) |
+
+**Gamepad** (first joystick):
+| Input | Action |
+|---|---|
+| Left stick | Move (field-oriented or robot-oriented based on drive mode) |
+| Right stick X | Rotate |
+| Left trigger (axis 4) | Toggle intake on/off (when on, continuously picks up artifacts in front cone) |
+| Right trigger (axis 5) | Launch ALL held artifacts (any number) |
+| X (2) | Toggle gate open (must be within gate_range of gate) |
+| Y (3) | Toggle drive mode (`robot` ↔ `field`) |
+| Back / Select (6) | Reset game |
+| Start (7) | Start timer / Pause toggle |
+
+**Drive modes:**
+- `"robot"`: W = forward (nose direction), S = backward, A/D = strafe, Left/Right = rotate
+- `"field"`: W = world-up, S = world-down, A/D = world-left/right, Left/Right = rotate
+- Gamepad: left stick moves in world axes in field mode, relative to robot heading in robot mode
+- Badge at field top-left shows current mode
+- **Default on startup: `"field"`**
+
+**Gate behavior:**
+- Press `T` (keyboard) or `X` (gamepad) within `gate_range` of the gate to open it
+- All ramp artifacts + overflow_held teleport to random spike-mark or loading-zone positions with small random velocity
+- Gate auto-closes after `gate_open_duration` seconds
+
+**Launch behavior:**
+- `Q`/right trigger works with any number of held artifacts
+- Launches all held as individual projectiles with random ±6px offset for visual separation
+- Each projectile independently reaches the goal and enters the ramp visually
+- Points (classified + overflow/depot) only count if robot was in launch zone
+- Outside the zone = artifact fills ramp visually but awards absolutely 0 points
+
+**Parking status:**
+- Live-updated every frame in `update_park_status()`
+- `NONE` — robot has zero overlap with base rect
+- `PARTIAL` — robot overlaps but is not fully inside → +5 pts at match end
+- `FULL` — robot entirely inside base rect → +10 pts at match end
+- HUD shows 3-segment indicator bar with status label (no header text)
+- Field shows pulsing gold border (PARTIAL) or green glow fill (FULL)
+
+**Pause behavior:**
+- When `timer_running` is `False`, all robot input is frozen (no movement, pickup, launch, gate)
+- `intake_active` is reset to `False` when timer stops or match ends
+- Timer digits shown in muted gray; STOPPED or PAUSED badge displayed on HUD
+- Physics simulation also frozen (artifacts stop moving)
+
+---
+
+## Game Flow
+
+1. Game starts in **TELEOP** phase with 120 seconds on the clock, timer **STOPPED**, drive mode **FIELD**
+2. Press **F6** (keyboard) or **Start** (gamepad) to begin the timer
+3. **Space** / **Start** pauses and resumes mid-match
+4. At **20 seconds remaining**, phase switches to **ENDGAME** (orange flashing text)
+5. At **0 seconds**, pattern scoring + base scoring are calculated
+6. Phase becomes **FINISHED** — robots freeze, overlay appears with colored parking result
+7. Press **F5** to reset, **ESC** to quit
+8. Window is **resizable** — content scales to fit while preserving aspect ratio
+
+---
+
+## Threading Architecture
+
+```
+Main Thread                          Physics Thread (daemon)
+─────────────                        ──────────────────────
+input_handler.handle_input()
+update_timer()
+update_turret_angle()
+                                     _physics_thread_target loop:
+acquire _physics_lock                   acquire _physics_lock
+  draw_field()                            update_park_status()
+  draw_artifacts()                        constrain_robot()
+  draw_robot()                            update_artifact_physics()
+  draw_hud()                              _update_flying_and_gate()
+  draw_match_end()                     release _physics_lock
+release _physics_lock
+smoothscale + display.flip()
+clock.tick_busy_loop(120)
+```
+
+- `_physics_lock` protects all shared `GameState` mutations
+- Turret angle update runs on main thread outside the lock (simple float reads/writes are GIL-atomic)
+- Reset acquires the lock to prevent physics thread from accessing state mid-reset
+- Physics thread runs at 60 Hz independently of the main thread's 120 Hz render rate
