@@ -52,10 +52,10 @@ def handle_input(state, dt):
             elif e.key == pygame.K_F6:
                 if state.phase != "FINISHED" and not state.timer_running:
                     state.timer_running = True
-            elif e.key == pygame.K_SPACE:
+            elif e.key == pygame.K_ESCAPE:
                 if state.phase != "FINISHED":
                     state.timer_running = not state.timer_running
-            elif e.key == pygame.K_ESCAPE:
+            elif e.key == pygame.K_F10:
                 pygame.quit()
                 sys.exit()
 

@@ -608,7 +608,7 @@ def _build_end_overlay(state):
     cy += 22
     cy += 30
 
-    lbl = f_small.render("F5 to reset  |  ESC to quit", True, WHITE)
+    lbl = f_small.render("F5 to reset  |  F10 to quit", True, WHITE)
     surf.blit(lbl, (cx - lbl.get_width() // 2, cy))
 
     _end_overlay = surf
