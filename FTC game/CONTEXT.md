@@ -356,9 +356,8 @@ Processes all Pygame events once per frame. Supports keyboard and gamepad simult
 | Left trigger (axis 4) | Toggle intake on/off (when on, continuously picks up artifacts in front cone; blocked when overheated) |
 | Right trigger (axis 5) | Launch ALL held artifacts (any number) |
 | X (2) | Toggle gate open (must be within gate_range of gate) |
-| Y (3) | Toggle drive mode (`robot` ↔ `field`) |
+| Y (3) | Pause / Resume toggle |
 | Back / Select (6) | Reset game |
-| Start (7) | Start timer / Pause toggle |
 
 **Drive modes:**
 - `"robot"`: W = forward (nose direction), S = backward, A/D = strafe, Left/Right = rotate
@@ -406,8 +405,8 @@ Processes all Pygame events once per frame. Supports keyboard and gamepad simult
 ## Game Flow
 
 1. Game starts in **TELEOP** phase with 120 seconds on the clock, timer **STOPPED**, drive mode **FIELD**
-2. Press **F6** (keyboard) or **Start** (gamepad) to begin the timer
-3. **ESC** / **Start** pauses and resumes mid-match
+2. Press **F6** (keyboard) to begin the timer
+3. **ESC** (keyboard) / **Y** (gamepad) pauses and resumes mid-match
 4. At **20 seconds remaining**, phase switches to **ENDGAME** (orange flashing text)
 5. At **0 seconds**, pattern scoring + base scoring are calculated
 6. Phase becomes **FINISHED** — robots freeze, overlay appears with colored parking result

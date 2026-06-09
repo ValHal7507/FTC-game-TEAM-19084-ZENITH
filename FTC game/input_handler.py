@@ -65,11 +65,9 @@ def handle_input(state, dt):
             if e.type == pygame.JOYBUTTONDOWN and e.joy == jid:
                 if e.button == 6:  # Back / Select
                     reset_requested = True
-                elif e.button == 7:  # Start
-                    if state.phase != "FINISHED" and not state.timer_running:
-                        state.timer_running = True
-                    elif state.phase != "FINISHED" and state.timer_running:
-                        state.timer_running = False
+                elif e.button == 3:  # Y — Pause / Resume toggle
+                    if state.phase != "FINISHED":
+                        state.timer_running = not state.timer_running
 
     if reset_requested:
         return True
@@ -284,8 +282,6 @@ def _handle_gamepad(state, r, joy, events, dt, in_front):
 
     for e in events:
         if e.type == pygame.JOYBUTTONDOWN and e.joy == jid:
-            if e.button == 3:
-                r.drive_mode = "robot" if r.drive_mode == "field" else "field"
-            elif e.button == 2:
+            if e.button == 2:
                 _toggle_gate(state, r)
 
