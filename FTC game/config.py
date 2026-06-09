@@ -39,6 +39,10 @@ YELLOW_ACCENT = (255, 240, 120)
 RED_ACCENT = (240, 70, 70)
 TEAL_ACCENT = (40, 200, 210)
 PARK_GREEN = (80, 220, 100)
+HEAT_GREEN = (60, 200, 80)
+HEAT_YELLOW = (230, 200, 40)
+HEAT_ORANGE = (240, 140, 30)
+HEAT_RED = (220, 50, 40)
 
 # ============================================================
 # CONFIG
@@ -79,6 +83,9 @@ CONFIG = {
     "field_margin_top": 5,
     "hud_width": 320,
     "hud_margin": 5,
+    "intake_heat_time": 10.0,
+    "intake_cool_time": 4.0,
+    "intake_cooldown_time": 10.0,
 }
 
 # Derived layout constants

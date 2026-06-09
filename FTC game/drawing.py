@@ -13,6 +13,7 @@ from config import (
     GOAL_GOLD, GOAL_DARK, RAMP_DARK, SLOT_EMPTY, SLOT_BORDER,
     GATE_COLOR, GATE_OPEN_COLOR,
     PURPLE, GREEN, GOLD, ORANGE, RED_ACCENT, PARK_GREEN,
+    HEAT_GREEN, HEAT_YELLOW, HEAT_ORANGE, HEAT_RED,
     lerp,
 )
 
@@ -466,11 +467,39 @@ def draw_hud(screen, state):
     screen.blit(lbl, (HX + 18, y))
     y += f_tiny.get_height() + 4
 
-    intake_txt = "INTAKE: ON" if state.intake_active else "INTAKE: OFF"
-    intake_clr = GREEN if state.intake_active else GRAY
+    if state.intake_overheated:
+        intake_txt = "INTAKE: COOLDOWN"
+        intake_clr = HEAT_RED
+    elif state.intake_active:
+        intake_txt = "INTAKE: ON"
+        intake_clr = GREEN
+    else:
+        intake_txt = "INTAKE: OFF"
+        intake_clr = GRAY
     lbl = f_tiny.render(intake_txt, True, intake_clr)
     screen.blit(lbl, (HX + 18, y))
-    y += f_tiny.get_height() + 8
+    y += f_tiny.get_height() + 4
+
+    bar_x, bar_y = HX + 18, y
+    bar_w, bar_h = HW - 36, 10
+    pygame.draw.rect(screen, DARK_GRAY, (bar_x, bar_y, bar_w, bar_h), border_radius=3)
+    heat = state.intake_heat
+    if heat > 0:
+        fill_w = int(bar_w * heat)
+        if heat < 0.5:
+            t = heat / 0.5
+            bar_clr = (int(lerp(60, 230, t)), int(lerp(200, 200, t)), int(lerp(80, 40, t)))
+        elif heat < 0.8:
+            t = (heat - 0.5) / 0.3
+            bar_clr = (int(lerp(230, 240, t)), int(lerp(200, 140, t)), int(lerp(40, 30, t)))
+        else:
+            t = (heat - 0.8) / 0.2
+            bar_clr = (int(lerp(240, 220, t)), int(lerp(140, 50, t)), int(lerp(30, 40, t)))
+        pygame.draw.rect(screen, bar_clr, (bar_x, bar_y, fill_w, bar_h), border_radius=3)
+    if state.intake_overheated:
+        cd_txt = f_tiny.render(f"{state.intake_cooldown_timer:.1f}s", True, HEAT_RED)
+        screen.blit(cd_txt, (bar_x + bar_w + 6, bar_y - 1))
+    y += bar_h + 8
 
     pygame.draw.line(screen, DARK_GRAY, (HX + 15, y), (HX + HW - 15, y), 2)
     y += 10

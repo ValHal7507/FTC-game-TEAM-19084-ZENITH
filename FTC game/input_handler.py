@@ -77,11 +77,17 @@ def handle_input(state, dt):
     # Frozen when timer not running
     if not state.timer_running:
         state.intake_active = False
+        state.intake_heat = 0.0
+        state.intake_overheated = False
+        state.intake_cooldown_timer = 0.0
         return
 
     # Frozen when match is over
     if state.phase == "FINISHED":
         state.intake_active = False
+        state.intake_heat = 0.0
+        state.intake_overheated = False
+        state.intake_cooldown_timer = 0.0
         return
 
     r = state.robot
@@ -115,7 +121,8 @@ def handle_input(state, dt):
             elif e.key == pygame.K_t:
                 _toggle_gate(state, r)
             elif e.key == pygame.K_e:
-                state.intake_active = not state.intake_active
+                if not state.intake_overheated:
+                    state.intake_active = not state.intake_active
 
     if state.intake_active:
         _try_pickup(state, r, in_front)
@@ -264,7 +271,8 @@ def _handle_gamepad(state, r, joy, events, dt, in_front):
     jid = joy.get_id()
     prev_lt = _trigger_cooldown.get((jid, "prev_lt"), 0)
     if lt and not prev_lt:
-        state.intake_active = not state.intake_active
+        if not state.intake_overheated:
+            state.intake_active = not state.intake_active
     _trigger_cooldown[(jid, "prev_lt")] = int(lt)
     cd_rt = _trigger_cooldown.get((jid, "rt"), 0.0)
     if state.intake_active:

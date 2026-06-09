@@ -12,7 +12,7 @@ FTC game/
 ├── config.py            # Colors, CONFIG dict, layout constants, math helpers
 ├── game_state.py        # Data classes: Artifact, FlyingArtifact, Robot, TeamState, GameState
 ├── drawing.py           # Rendering: field, artifacts, robot, HUD, match-end overlay (with caching)
-├── game_logic.py        # Timer, scoring, 2D artifact physics, flying updates, robot constraints, park status, physics thread
+├── game_logic.py        # Timer, scoring, 2D artifact physics, flying updates, robot constraints, park status, intake heat, physics thread
 ├── input_handler.py     # Keyboard and gamepad input, pause/start/reset controls
 └── CONTEXT.md           # This file
 ```
@@ -41,18 +41,24 @@ No external dependencies beyond Python stdlib and `pygame`.
 **Color palette** (all RGB/RGBA tuples):
 | Constant | Usage |
 |---|---|
+| `BLACK`, `WHITE`, `GRAY` | Basic colors used throughout rendering |
 | `CHARCOAL`, `DARK_GRAY`, `BG_DARK` | Field background, grid lines, HUD panel |
-| `ROBOT_PURPLE`, `GLOW_PURPLE` | Robot fill and selection glow |
+| `LIGHT_GRAY`, `SOFT_WHITE` | Light text and highlights |
+| `ROBOT_PURPLE`, `ROBOT_DARK`, `GLOW_PURPLE` | Robot fill, dark shade, and selection glow |
 | `GOAL_GOLD`, `GOAL_DARK` | Goal outline and fill |
 | `RAMP_DARK` | Ramp background |
+| `GATE_COLOR`, `GATE_OPEN_COLOR` | Gate closed/open state colors |
+| `SLOT_EMPTY`, `SLOT_BORDER` | Ramp classifier slot colors |
 | `PURPLE` / `GREEN` | Artifact colors (color "P" and "G") |
 | `PURPLE_DIM` / `GREEN_DIM` | Dimmed artifact colors |
-| `SLOT_EMPTY`, `SLOT_BORDER` | Ramp classifier slot colors |
-| `GOLD`, `ORANGE`, `SOFT_WHITE` | UI text and highlights |
+| `GOLD`, `ORANGE` | UI text and highlights |
 | `PARK_GREEN` | Parking status indicator (full park) |
 | `RED_ACCENT` | Match-end overlay (not parked) |
-| `LIGHT_GRAY` | Available for general use |
 | `YELLOW_ACCENT`, `TEAL_ACCENT` | Available for general use |
+| `HEAT_GREEN` | Intake heat bar: cool (low heat) |
+| `HEAT_YELLOW` | Intake heat bar: warm (mid heat) |
+| `HEAT_ORANGE` | Intake heat bar: hot (high heat) |
+| `HEAT_RED` | Intake heat bar: critical / cooldown text |
 
 **`CONFIG` dict** — All tunable magic numbers:
 | Key | Value | Purpose |
@@ -91,6 +97,9 @@ No external dependencies beyond Python stdlib and `pygame`.
 | `field_margin_top` | 5 | Top margin between field and canvas edge |
 | `hud_width` | 320 | HUD panel width |
 | `hud_margin` | 5 | Gap between field and HUD panel |
+| `intake_heat_time` | 10.0 | Seconds for intake to overheat when running |
+| `intake_cool_time` | 4.0 | Seconds to cool from partial heat (intake off, heat < 1.0) |
+| `intake_cooldown_time` | 10.0 | Seconds blocked after full overheat (bar drains during cooldown) |
 
 **Derived layout constants** (computed from CONFIG):
 | Constant | Value | Meaning |
@@ -101,6 +110,8 @@ No external dependencies beyond Python stdlib and `pygame`.
 | `HX`, `HW` | 730, 320 | HUD panel left edge and width |
 
 **Helpers**: `dist(a, b)`, `clamp(v, lo, hi)`, `lerp(a, b, t)`
+
+**Backward-compatible aliases**: `W, H = VW, VH` (used by drawing.py)
 
 **Global render state**: `scale_factor = 1.0`, `render_surf = None` (set by main.py)
 
@@ -127,7 +138,7 @@ No external dependencies beyond Python stdlib and `pygame`.
 - `MAX_TRAIL: ClassVar[int] = 18` — max trail length (class variable, not instance field)
 
 #### `GateClearAnim`
-- `x, y`, `target_x, `target_y` — animation start and end positions
+- `x, y`, `target_x`, `target_y` — animation start and end positions
 - `color` — artifact color being cleared
 - `progress: float` — animation progress (0.0 to 1.0)
 - `active: bool` — whether animation is still running
@@ -138,6 +149,7 @@ No external dependencies beyond Python stdlib and `pygame`.
 - `vx, vy` — velocity from input (used for physics push)
 - `drive_mode` — `"robot"` or `"field"` (default: `"field"`)
 - `holding` — list of `Artifact` objects being carried (max 3)
+- `start_x`, `start_y` — initial position (set from constructor args in `__post_init__`)
 - `can_pickup()` — returns `True` if holding < 3
 
 #### `TeamState`
@@ -161,6 +173,13 @@ No external dependencies beyond Python stdlib and `pygame`.
 - `flying` — active `FlyingArtifact` list
 - `park_status: str` — `"NONE"`, `"PARTIAL"`, or `"FULL"` (live-updated every frame)
 - `intake_active: bool` — toggle state for intake; `True` = continuously picking up artifacts in range
+- `intake_heat: float` — motor temperature, 0.0 (cold) to 1.0 (overheated)
+- `intake_overheated: bool` — `True` during 5-second cooldown after full overheat
+- `intake_cooldown_timer: float` — seconds remaining in overheat cooldown
+- `gate_clears: List[GateClearAnim]` — gate-clearing animations
+- `secret_tunnel: tuple` — center of field coordinates
+- `scored: bool` — scoring flag
+- `motif_name: str` — joined string of motif (e.g., `"GPP"`)
 - **`_setup()`** — shared init logic called by both `__init__` and `reset()`; calls `rebuild_obstacle_cache(self)` at the end
 - **`reset()`** — calls `_setup()` to reinitialize all state
 - **`_init_artifacts()`** — creates 27 artifacts:
@@ -168,7 +187,7 @@ No external dependencies beyond Python stdlib and `pygame`.
   - **3 loading-zone** artifacts (PGP, no respawn)
   - **6 alliance-area** artifacts (4P+2G random)
 - **`goal_rect()`**, `ramp_rect()`, `depot_rect()`, `gate_rect()`, `loading_rect()`, `base_rect()` — computed `pygame.Rect` helpers
-- **`in_launch_zone(x, y)`** — triangular zone at top of field
+- **`in_launch_zone(x, y)`** — checks if point is within the triangular launch zone at top of field **OR** within the base/parking zone rectangle; both zones count for scoring
 - **`nearest_artifact(x, y, radius)`** — finds closest pickup-able artifact
 - **`get_ramp_scatter_positions(state)`** (module-level) — returns 21 `(x, y)` positions (18 spike-mark + 3 loading zone) for gate-release teleport
 
@@ -185,7 +204,7 @@ No external dependencies beyond Python stdlib and `pygame`.
 | Name | Size | Usage |
 |---|---|---|
 | `f_micro` | 14 | Spike labels |
-| `f_tiny` | 17 | Score lines, zone labels, launch zone indicator, parking status label |
+| `f_tiny` | 17 | Score lines, zone labels, launch zone indicator, parking status label, intake cooldown timer |
 | `f_small` | 21 | Section headers, robot label |
 | `f_hud_s` | 26 | "SCORE" heading |
 | `f_hud` | 34 | Phase text |
@@ -209,8 +228,8 @@ Three independent caches improve rendering performance:
 | `draw_field()` | Static field elements from cache + dynamic per-frame: drive mode badge, base zone park status (fill + pulse/glow), ramp slot fill, gate open/closed state |
 | `draw_artifacts()` | Field artifacts (with glow and motion ghost), flying artifacts (each as individual colored circle with alpha-blended fading trail capped at `MAX_TRAIL`) |
 | `draw_robot()` | **ZENITH (FTC 19084) layered render with cache**: 96×96 SRCALPHA surface, drawn in 12 layers then rotated and blitted. Layers: drop shadow, 4 mecanum wheels with blue rollers, silver open truss frame with X-braces, purple 3D-printed infill panels, blue LED glow, green REV hub status LED, black corrugated intake hose arc, front intake rollers, turret base ring, **goal-tracking turret** (rotated independently of body via `turret_angle`, always points at goal), team labels, gold forward triangle. Held artifacts are baked onto the surface before rotation so they stay glued to the robot. Cache key includes turret angle so turret tracks goal even during pure translation. |
-| `draw_hud()` | Dark panel on right side: phase label, STOPPED/PAUSED badge, countdown timer (muted gray when paused), motif circles, launch zone indicator (✓/✗), intake status (ON/OFF), score breakdown, 9-slot ramp display, gate state, parking status 3-segment bar with status label |
-| `draw_match_end()` | Cached semi-transparent overlay with "MATCH OVER", final score, breakdown with colored parking result, F5/ESC prompt |
+| `draw_hud()` | Dark panel on right side: phase label, STOPPED/PAUSED badge, countdown timer (muted gray when paused), motif circles, launch zone indicator (✓/✗), intake status (ON/OFF/COOLDOWN) with color-interpolated heat bar (green→yellow→orange→red) and cooldown timer, score breakdown, 9-slot ramp display, gate state, parking status 3-segment bar with status label |
+| `draw_match_end()` | Cached semi-transparent overlay with "MATCH OVER", final score, breakdown with colored parking result, F5/F10 prompt |
 
 ---
 
@@ -232,10 +251,20 @@ Three independent caches improve rendering performance:
 | `update_artifact_physics(state, dt)` | 2D physics with early-exit optimization: velocity integration, exponential friction, field-wall bounce with restitution, goal+depot merged-obstacle containment push-out + bounce, artifact–artifact collision resolution, robot–artifact push with restitution + extra push force. Uses cached obstacle rect and local variable aliases for performance. |
 | `constrain_robot(state)` | Pushes robot out of cached obstacle rect (iterative resolve, capped at `_CONSTRAIN_MAX_ITER = 8` iterations) |
 | `update_turret_angle(state)` | Snaps turret angle to point at goal. **Runs on the main thread every frame** (not in physics thread). |
+| `update_intake_heat(state, dt)` | Intake motor heat management. When intake is ON, heat increases at `dt / intake_heat_time`. At 1.0 → overheat: auto-shutoff, cooldown starts, intake blocked. When overheated, heat visually drains at `dt / intake_cooldown_time` synced with cooldown timer. When intake OFF and heat < 1.0, heat decreases at `dt / intake_cool_time`. |
 | `_update_flying_and_gate(state, dt)` | Moves flying artifacts toward goal, handles scoring on arrival, updates gate auto-close timer. Runs under `_physics_lock`. |
-| `update_physics(state, dt)` | Runs one frame of physics simulation under `_physics_lock`: park status, robot constraint, artifact physics, flying artifacts, gate timer. Does NOT update turret angle. |
+| `update_physics(state, dt)` | Runs one frame of physics simulation under `_physics_lock`: park status is always updated; robot constraint, intake heat, artifact physics, flying artifacts, and gate timer only run when `timer_running` is `True`. Does NOT update turret angle. |
 | `get_park_status(state)` | Returns `"NONE"`, `"PARTIAL"`, or `"FULL"` based on robot rect vs base rect containment |
 | `update_park_status(state)` | Writes `get_park_status()` result to `state.park_status` |
+
+**Intake overheating system:**
+- Heat bar on HUD fills from 0→100% over `intake_heat_time` seconds when intake is ON
+- Color gradient: green (0–50%) → yellow (50–80%) → orange (80–95%) → red (95–100%)
+- At 100%: intake auto-shutoffs, enters cooldown
+- During cooldown: bar visually drains from full→empty over `intake_cooldown_time` seconds, countdown timer text displayed next to bar
+- Intake is blocked during cooldown (toggle disabled on both keyboard E and gamepad left trigger)
+- Partial cool: if intake toggled OFF before overheating, heat drains at `intake_cool_time` seconds
+- Heat fully reset on pause, finish, or game reset
 
 **Turret tracking:**
 - Each frame, the target angle is computed as `atan2(gx, -gy)` from robot to goal center
@@ -257,8 +286,8 @@ Three independent caches improve rendering performance:
 **Scoring rules:**
 | Event | Points | Notes |
 |---|---|---|
-| Artifact classified on ramp | +3 | Only if in launch zone |
-| Overflow / Depot | +1 each | Only if in launch zone |
+| Artifact classified on ramp | +3 | Only if in launch zone (top triangle or base/parking zone) |
+| Overflow / Depot | +1 each | Only if in launch zone (top triangle or base/parking zone) |
 | Pattern match (per matching slot) | +2 | Evaluated at match end |
 | Full base return | +10 | Robot entirely inside base rect at match end |
 | Partial base return | +5 | Robot partially in base rect at match end |
@@ -296,8 +325,8 @@ Processes all Pygame events once per frame. Supports keyboard and gamepad simult
 |---|---|
 | `F5` | Reset game (timer stops) |
 | `F6` | Start timer (only works when stopped) |
-| `Space` | Pause / Resume toggle |
-| `ESC` | Quit |
+| `ESC` | Pause / Resume toggle |
+| `F10` | Quit |
 
 **Robot** has a facing direction (`angle`, 0 = up). Default `drive_mode = "field"`:
 - In field mode: W/S/A/D move in world axes regardless of facing
@@ -314,7 +343,7 @@ Processes all Pygame events once per frame. Supports keyboard and gamepad simult
 | `D` | Strafe right (robot mode) / World right (field mode) |
 | `←` | Rotate left |
 | `→` | Rotate right |
-| `E` | Toggle intake on/off (when on, continuously picks up artifacts in front cone) |
+| `E` | Toggle intake on/off (when on, continuously picks up artifacts in front cone; blocked when overheated) |
 | `Q` | Launch ALL held artifacts toward goal (any number) |
 | `T` | Toggle gate open (must be within gate_range of gate) |
 | `R` | Toggle drive mode (`robot` ↔ `field`) |
@@ -324,7 +353,7 @@ Processes all Pygame events once per frame. Supports keyboard and gamepad simult
 |---|---|
 | Left stick | Move (field-oriented or robot-oriented based on drive mode) |
 | Right stick X | Rotate |
-| Left trigger (axis 4) | Toggle intake on/off (when on, continuously picks up artifacts in front cone) |
+| Left trigger (axis 4) | Toggle intake on/off (when on, continuously picks up artifacts in front cone; blocked when overheated) |
 | Right trigger (axis 5) | Launch ALL held artifacts (any number) |
 | X (2) | Toggle gate open (must be within gate_range of gate) |
 | Y (3) | Toggle drive mode (`robot` ↔ `field`) |
@@ -347,8 +376,15 @@ Processes all Pygame events once per frame. Supports keyboard and gamepad simult
 - `Q`/right trigger works with any number of held artifacts
 - Launches all held as individual projectiles with random ±6px offset for visual separation
 - Each projectile independently reaches the goal and enters the ramp visually
-- Points (classified + overflow/depot) only count if robot was in launch zone
-- Outside the zone = artifact fills ramp visually but awards absolutely 0 points
+- Points (classified + overflow/depot) only count if robot was in launch zone (top triangle **OR** base/parking zone)
+- Outside both zones = artifact fills ramp visually but awards absolutely 0 points
+
+**Intake overheating behavior:**
+- `E` (keyboard) / left trigger (gamepad) toggles intake; **blocked when `intake_overheated` is True**
+- When intake is ON, `intake_heat` increases each frame; HUD shows a color-interpolated bar (green→yellow→orange→red)
+- At 100% heat: intake auto-shutoffs, 10-second cooldown begins, bar visually drains alongside countdown timer text
+- Partial cool: if intake toggled OFF before 100%, bar drains over `intake_cool_time` seconds and intake can be re-enabled anytime
+- Heat fully reset on pause, match end, or game reset
 
 **Parking status:**
 - Live-updated every frame in `update_park_status()`
@@ -361,6 +397,7 @@ Processes all Pygame events once per frame. Supports keyboard and gamepad simult
 **Pause behavior:**
 - When `timer_running` is `False`, all robot input is frozen (no movement, pickup, launch, gate)
 - `intake_active` is reset to `False` when timer stops or match ends
+- `intake_heat`, `intake_overheated`, and `intake_cooldown_timer` are all reset to zero on pause/finish
 - Timer digits shown in muted gray; STOPPED or PAUSED badge displayed on HUD
 - Physics simulation also frozen (artifacts stop moving)
 
@@ -370,11 +407,11 @@ Processes all Pygame events once per frame. Supports keyboard and gamepad simult
 
 1. Game starts in **TELEOP** phase with 120 seconds on the clock, timer **STOPPED**, drive mode **FIELD**
 2. Press **F6** (keyboard) or **Start** (gamepad) to begin the timer
-3. **Space** / **Start** pauses and resumes mid-match
+3. **ESC** / **Start** pauses and resumes mid-match
 4. At **20 seconds remaining**, phase switches to **ENDGAME** (orange flashing text)
 5. At **0 seconds**, pattern scoring + base scoring are calculated
 6. Phase becomes **FINISHED** — robots freeze, overlay appears with colored parking result
-7. Press **F5** to reset, **ESC** to quit
+7. Press **F5** to reset, **F10** to quit
 8. Window is **resizable** — content scales to fit while preserving aspect ratio
 
 ---
@@ -391,10 +428,10 @@ update_turret_angle()
 acquire _physics_lock                   acquire _physics_lock
   draw_field()                            update_park_status()
   draw_artifacts()                        constrain_robot()
-  draw_robot()                            update_artifact_physics()
-  draw_hud()                              _update_flying_and_gate()
-  draw_match_end()                     release _physics_lock
-release _physics_lock
+  draw_robot()                            update_intake_heat()
+  draw_hud()                              update_artifact_physics()
+  draw_match_end()                        _update_flying_and_gate()
+release _physics_lock                  release _physics_lock
 smoothscale + display.flip()
 clock.tick_busy_loop(120)
 ```

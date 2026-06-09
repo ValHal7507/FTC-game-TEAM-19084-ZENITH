@@ -346,6 +346,31 @@ def _update_flying_and_gate(state, dt):
 
 
 # ---------------------------------------------------------------------------
+# Intake heat management
+# ---------------------------------------------------------------------------
+def update_intake_heat(state, dt):
+    """Update intake motor temperature. Heats when running, cools when idle."""
+    if state.intake_overheated:
+        state.intake_cooldown_timer -= dt
+        state.intake_heat = max(0.0, state.intake_cooldown_timer / CONFIG["intake_cooldown_time"])
+        if state.intake_cooldown_timer <= 0:
+            state.intake_overheated = False
+            state.intake_cooldown_timer = 0.0
+            state.intake_heat = 0.0
+        return
+    if state.intake_active:
+        state.intake_heat += dt / CONFIG["intake_heat_time"]
+        if state.intake_heat >= 1.0:
+            state.intake_heat = 1.0
+            state.intake_overheated = True
+            state.intake_cooldown_timer = CONFIG["intake_cooldown_time"]
+            state.intake_active = False
+    elif state.intake_heat > 0:
+        state.intake_heat -= dt / CONFIG["intake_cool_time"]
+        state.intake_heat = max(0.0, state.intake_heat)
+
+
+# ---------------------------------------------------------------------------
 # Combined physics update (called from physics thread)
 # ---------------------------------------------------------------------------
 def update_physics(state, dt):
@@ -354,6 +379,7 @@ def update_physics(state, dt):
     if not state.timer_running:
         return
     constrain_robot(state)
+    update_intake_heat(state, dt)
     update_artifact_physics(state, dt)
     _update_flying_and_gate(state, dt)
 

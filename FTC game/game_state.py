@@ -127,6 +127,9 @@ class GameState:
         self.timer = CONFIG["teleop_time"]
         self.timer_running = False
         self.intake_active = False
+        self.intake_heat = 0.0
+        self.intake_overheated = False
+        self.intake_cooldown_timer = 0.0
 
         motifs = [["G", "P", "P"], ["P", "G", "P"], ["P", "P", "G"]]
         self.motif = random.choice(motifs)
@@ -203,7 +206,9 @@ class GameState:
                            FY + FS - CONFIG["base_size"], CONFIG["base_size"], CONFIG["base_size"])
 
     def in_launch_zone(self, x, y):
-        """Check if a point is within the triangular launch zone."""
+        """Check if a point is within the triangular launch zone or base/parking zone."""
+        if self.base_rect().collidepoint(x, y):
+            return True
         fx, fy = x - FX, y - FY
         if 0 <= fy <= 300:
             left = 100 + (260 - 100) * (fy / 300)
