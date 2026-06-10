@@ -17,7 +17,7 @@ La pornire, numele controlerului detectat apare in consola (ex: `Gamepad 0: Xbox
 
 ## Moduri de deplasare
 
-Jocul dispune de **doua moduri de deplasare**, comutabile cu tasta `R` (tastatura) sau butonul `Y` (controler):
+Jocul dispune de **doua moduri de deplasare**, comutabile cu tasta `R` (tastatura):
 
 | Mod | Comportament |
 |---|---|
@@ -56,8 +56,8 @@ Modul curent este afisat intr-un badge in coltul stanga sus al terenului.
 |---|---|
 | `F5` | Reseteaza jocul (opreste totul, repune artefactele) |
 | `F6` | Porneste cronometrul (doar cand e oprit) |
-| `Space` | Pauza / Resume |
-| `ESC` | Iesire din joc |
+| `ESC` | Pauza / Resume |
+| `F10` | Iesire din joc |
 
 ---
 
@@ -76,19 +76,18 @@ Modul curent este afisat intr-un badge in coltul stanga sus al terenului.
 
 | Trigger | Actiune |
 |---|---|
-| **Trigger stanga (LT)** | Porneste / opreste intakes-ul (ridicare continua) |
-| **Trigger dreapta (RT)** | Lanseaza TOATE artefactele detinute spre gol |
+| **Trigger stanga (LT)** | Lanseaza TOATE artefactele detinute spre gol (oricate ar avea) |
+| **Trigger dreapta (RT)** | Tine apasat pentru intake (ridicare continua cat timp e tinut; blocat cand e supraincalzit) |
 
-> La trigger-ul dreapta exista un cooldown de 0.25 secunde intre lansari pentru a preveni lansari accidentale duble.
+> La trigger-ul stanga exista un cooldown de 0.25 secunde intre lansari pentru a preveni lansari accidentale duble.
 
 ### Butoane
 
 | Buton | Actiune |
 |---|---|
 | `X` (butonul 2) | Deschide / inchide poarta ( trebuie sa fii in raza de actiune ) |
-| `Y` (butonul 3) | Comuteaza modul de deplasare (Robot / Field) |
+| `Y` (butonul 3) | Pauza / Resume |
 | `Back / Select` (butonul 6) | Reseteaza jocul |
-| `Start` (butonul 7) | Porneste cronometrul / Pauza / Resume |
 
 ---
 
@@ -101,20 +100,20 @@ Scopul este sa colectezi artefacte de pe teren, sa le clasifici pe rampa si sa l
 ### Pregatirea meciului
 
 1. Jocul porneste in faza **TELEOP** cu 120 de secunde pe cronometru, cronometrul **OPRIT**
-2. Apasa **F6** (tastatura) sau **Start** (controler) pentru a porni cronometrul si a incepe meciul
+2. Apasa **F6** (tastatura) pentru a porni cronometrul si a incepe meciul
 
 ### Colectarea artefactelor
 
 - Apropie robotul de un artefact (cercurile de pe teren: violet sau verde)
 - Artefactul trebuie sa fie in **fata** robotului (un con de 120 grade)
-- Daca intakes-ul e **pornit** (`E` / `LT`), robotul ridica automat artefactele din fata
+- Daca intakes-ul e **pornit** (`E` / `RT`), robotul ridica automat artefactele din fata
 - Daca intakes-ul e **oprit**, robotul nu ridica nimic automat
 - Robotul poate tine maxim **3 artefacte** simultan
 
 ### Lansarea spre gol
 
 - Apropie robotul de **zona de lansare** (triunghiul de sus din teren)
-- Apasa `Q` (tastatura) sau `RT` (controler) pentru a lansa toate artefactele detinute
+- Apasa `Q` (tastatura) sau `LT` (controler) pentru a lansa toate artefactele detinute
 - Artefactele zboara spre gol si intra in rampa vizual
 - **Puncte:** artefactele lansate din zona de lansare primesc puncte; cele lansate din alta zona nu primesc nimic (doar umplu rampa vizual)
 
@@ -148,10 +147,10 @@ Scopul este sa colectezi artefacte de pe teren, sa le clasifici pe rampa si sa l
 
 ### Pauza si reset
 
-- `Space` / `Start` — pune pe pauza / reia cronometrul
+- `ESC` (tastatura) / `Y` (controler) — pune pe pauza / reia cronometrul
 - Cand cronometrul e oprit, robotul **nu se misca** si nu poate interactiona
-- `F5` / `Back` — reseteaza intregul joc (teren, artefacte, scor)
-- `ESC` — iesire din joc
+- `F5` (tastatura) / `Back` (controler) — reseteaza intregul joc (teren, artefacte, scor)
+- `F10` — iesire din joc
 
 ---
 
