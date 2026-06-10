@@ -269,18 +269,22 @@ def _handle_gamepad(state, r, joy, events, dt, in_front):
     lt = joy.get_axis(4) > 0.5 if joy.get_numaxes() > 4 else 0
     rt = joy.get_axis(5) > 0.5 if joy.get_numaxes() > 5 else 0
     jid = joy.get_id()
+
+    # Left trigger: launch (edge-detect, press only)
     prev_lt = _trigger_cooldown.get((jid, "prev_lt"), 0)
     if lt and not prev_lt:
-        if not state.intake_overheated:
-            state.intake_active = not state.intake_active
+        _launch_held(state, r)
     _trigger_cooldown[(jid, "prev_lt")] = int(lt)
-    cd_rt = _trigger_cooldown.get((jid, "rt"), 0.0)
+
+    # Right trigger: hold-to-intake (active while held, blocked when overheated)
+    if rt:
+        if not state.intake_overheated:
+            state.intake_active = True
+    else:
+        state.intake_active = False
+
     if state.intake_active:
         _try_pickup(state, r, in_front)
-    if rt and cd_rt <= 0:
-        _launch_held(state, r)
-        _trigger_cooldown[(jid, "rt")] = 0.25
-    _trigger_cooldown[(jid, "rt")] = max(0, _trigger_cooldown.get((jid, "rt"), 0) - dt)
 
     for e in events:
         if e.type == pygame.JOYBUTTONDOWN and e.joy == jid:

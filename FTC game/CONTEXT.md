@@ -174,7 +174,7 @@ No external dependencies beyond Python stdlib and `pygame`.
 - `park_status: str` — `"NONE"`, `"PARTIAL"`, or `"FULL"` (live-updated every frame)
 - `intake_active: bool` — toggle state for intake; `True` = continuously picking up artifacts in range
 - `intake_heat: float` — motor temperature, 0.0 (cold) to 1.0 (overheated)
-- `intake_overheated: bool` — `True` during 5-second cooldown after full overheat
+- `intake_overheated: bool` — `True` during 10-second cooldown after full overheat
 - `intake_cooldown_timer: float` — seconds remaining in overheat cooldown
 - `gate_clears: List[GateClearAnim]` — gate-clearing animations
 - `secret_tunnel: tuple` — center of field coordinates
@@ -262,7 +262,7 @@ Three independent caches improve rendering performance:
 - Color gradient: green (0–50%) → yellow (50–80%) → orange (80–95%) → red (95–100%)
 - At 100%: intake auto-shutoffs, enters cooldown
 - During cooldown: bar visually drains from full→empty over `intake_cooldown_time` seconds, countdown timer text displayed next to bar
-- Intake is blocked during cooldown (toggle disabled on both keyboard E and gamepad left trigger)
+- Intake is blocked during cooldown (toggle disabled on keyboard E, hold blocked on gamepad right trigger)
 - Partial cool: if intake toggled OFF before overheating, heat drains at `intake_cool_time` seconds
 - Heat fully reset on pause, finish, or game reset
 
@@ -353,8 +353,8 @@ Processes all Pygame events once per frame. Supports keyboard and gamepad simult
 |---|---|
 | Left stick | Move (field-oriented or robot-oriented based on drive mode) |
 | Right stick X | Rotate |
-| Left trigger (axis 4) | Toggle intake on/off (when on, continuously picks up artifacts in front cone; blocked when overheated) |
-| Right trigger (axis 5) | Launch ALL held artifacts (any number) |
+| Left trigger (axis 4) | Launch ALL held artifacts (any number) |
+| Right trigger (axis 5) | Hold to intake (continuously picks up artifacts in front cone while held; blocked when overheated) |
 | X (2) | Toggle gate open (must be within gate_range of gate) |
 | Y (3) | Pause / Resume toggle |
 | Back / Select (6) | Reset game |
@@ -373,14 +373,15 @@ Processes all Pygame events once per frame. Supports keyboard and gamepad simult
 - Gate auto-closes after `gate_open_duration` seconds
 
 **Launch behavior:**
-- `Q`/right trigger works with any number of held artifacts
+- `Q`/left trigger works with any number of held artifacts
 - Launches all held as individual projectiles with random ±6px offset for visual separation
 - Each projectile independently reaches the goal and enters the ramp visually
 - Points (classified + overflow/depot) only count if robot was in launch zone (top triangle **OR** base/parking zone)
 - Outside both zones = artifact fills ramp visually but awards absolutely 0 points
 
 **Intake overheating behavior:**
-- `E` (keyboard) / left trigger (gamepad) toggles intake; **blocked when `intake_overheated` is True**
+- `E` (keyboard) toggles intake; **blocked when `intake_overheated` is True**
+- Right trigger (gamepad) holds to intake (intake active while held, deactivates on release); **blocked when `intake_overheated` is True**
 - When intake is ON, `intake_heat` increases each frame; HUD shows a color-interpolated bar (green→yellow→orange→red)
 - At 100% heat: intake auto-shutoffs, 10-second cooldown begins, bar visually drains alongside countdown timer text
 - Partial cool: if intake toggled OFF before 100%, bar drains over `intake_cool_time` seconds and intake can be re-enabled anytime
