@@ -1,6 +1,6 @@
 ---
 name: deploy-ftc-game
-description: Build and deploy the FTC DECODE Match Simulator. Use this skill whenever the user says "deploy", "update", "release", "build and deploy", "ship it", "push update", "create exe", "make exe", or any similar phrase indicating they want to build a new executable and update the documentation. This skill handles the full pipeline: PyInstaller build, exe replacement, cleanup, and documentation sync.
+description: Build and deploy the FTC DECODE Match Simulator. Use this skill whenever the user says "deploy the code", "deploy", "make the game", "build the game", "build the exe", "update", "release", "build and deploy", "ship it", "push update", "create exe", "make exe", or any similar phrase indicating they want to build, compile, or deploy the game. This skill handles the full pipeline: PyInstaller build, exe replacement, cleanup, and documentation sync.
 ---
 
 # Deploy FTC DECODE Match Simulator

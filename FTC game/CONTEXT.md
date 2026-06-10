@@ -14,6 +14,8 @@ FTC game/
 ├── drawing.py           # Rendering: field, artifacts, robot, HUD, match-end overlay (with caching)
 ├── game_logic.py        # Timer, scoring, 2D artifact physics, flying updates, robot constraints, park status, intake heat, physics thread
 ├── input_handler.py     # Keyboard and gamepad input, pause/start/reset controls
+├── keybinds.json        # Saved custom keybinds (created on first rebinding, loaded on startup)
+├── CONTROLS.md          # User-facing controls guide (Romanian)
 └── CONTEXT.md           # This file
 ```
 
@@ -35,6 +37,7 @@ No external dependencies beyond Python stdlib and `pygame`.
 - **Thread safety**: Acquires `_physics_lock` during render to prevent physics mutations mid-draw; `update_timer()` also runs under this lock so scoring is atomic with respect to flying artifact updates; reset is also performed under lock
 - **Turret tracking**: `update_turret_angle(state)` runs on the main thread every frame (outside lock) so the turret always tracks the goal in real time
 - `handle_input()` returns `True` when reset is requested; main.py performs `state.reset()` under the physics lock
+- Options screen (`draw_options_screen`) rendered on top when `state.options_active` is True
 
 ### `config.py` — Constants
 
@@ -59,6 +62,15 @@ No external dependencies beyond Python stdlib and `pygame`.
 | `HEAT_YELLOW` | Intake heat bar: warm (mid heat) |
 | `HEAT_ORANGE` | Intake heat bar: hot (high heat) |
 | `HEAT_RED` | Intake heat bar: critical / cooldown text |
+| `PAUSE_OVERLAY` | Semi-transparent black overlay for pause menu background |
+| `MENU_BG` | Pause menu panel background |
+| `MENU_BORDER` | Pause menu panel border |
+| `MENU_HIGHLIGHT_BG` | Pause menu highlighted button background |
+| `MENU_HIGHLIGHT_BORDER` | Pause menu highlighted button border |
+| `MENU_TEXT` | Pause menu button text |
+| `MENU_TITLE` | Pause menu "PAUSED" title text |
+| `OPTIONS_REBIND` | Options screen rebinding pulse color (red-orange) |
+| `OPTIONS_BIND` | Options screen selected binding color (green) |
 
 **`CONFIG` dict** — All tunable magic numbers:
 | Key | Value | Purpose |
@@ -115,6 +127,15 @@ No external dependencies beyond Python stdlib and `pygame`.
 **Backward-compatible aliases**: `W, H = VW, VH` (used by drawing.py)
 
 **Global render state**: `scale_factor = 1.0`, `render_surf = None` (set by main.py)
+
+**Keybind constants:**
+- `GAMEPAD_NAMES` — dict mapping `("button", N)` / `("axis", N)` tuples to human-readable names (e.g., `"A"`, `"LT (axis 4)"`)
+- `KEYBIND_ACTIONS_KEYBOARD` — list of 10 keyboard action names: Move Forward, Move Backward, Strafe Left, Strafe Right, Rotate Left, Rotate Right, Toggle Intake, Launch Artifacts, Toggle Gate, Drive Mode
+- `KEYBIND_ACTIONS_GAMEPAD` — list of 5 gamepad action names: Launch, Intake, Gate, Pause, Drive Mode
+- `DEFAULT_KEYBINDS` — dict with `"keyboard"` and `"gamepad"` sub-dicts mapping action names to binding tuples like `("key", pygame.K_w)` or `("axis", 4)`
+- `LOCKED_KEYBINDS` — dict of actions that cannot be rebound: `{"keyboard": set(), "gamepad": {"Reset"}}`
+- `save_keybinds(keybinds)` — writes current keybinds to `keybinds.json` in the game directory (JSON, tuples→lists). Never raises.
+- `load_keybinds()` → `dict | None` — reads `keybinds.json`, converts lists→tuples. Returns `None` on any error (missing file, corrupt JSON, invalid structure). Prints a one-line note to console on fallback.
 
 ---
 
@@ -185,6 +206,12 @@ No external dependencies beyond Python stdlib and `pygame`.
 - `secret_tunnel: tuple` — center of field coordinates
 - `scored: bool` — scoring flag
 - `motif_name: str` — joined string of motif (e.g., `"GPP"`)
+- `pause_menu_index: int` — selected pause menu button index (0–4)
+- `options_active: bool` — whether the Options (keybind customization) screen is open
+- `options_page: int` — current Options tab (0 = keyboard, 1 = gamepad)
+- `options_index: int` — selected row in Options screen
+- `options_rebinding: bool` — `True` when waiting for a new key/button input during rebinding
+- `keybinds: dict` — current key bindings, structured as `{"keyboard": {action: ("key", K)}, "gamepad": {action: ("button"|"axis", N)}}`
 - **`_setup()`** — shared init logic called by both `__init__` and `reset()`; calls `rebuild_obstacle_cache(self)` at the end
 - **`reset()`** — calls `_setup()` to reinitialize all state
 - **`_init_artifacts()`** — creates 27 artifacts:
@@ -236,6 +263,8 @@ Three independent caches improve rendering performance:
 | `draw_robot()` | **ZENITH (FTC 19084) layered render with cache**: 96×96 SRCALPHA surface, drawn in 12 layers then rotated and blitted. Layers: drop shadow, 4 mecanum wheels with blue rollers, silver open truss frame with X-braces, purple 3D-printed infill panels, blue LED glow, green REV hub status LED, black corrugated intake hose arc, front intake rollers, turret base ring, **goal-tracking turret** (rotated independently of body via `turret_angle`, always points at goal), team labels, gold forward triangle. Held artifacts are baked onto the surface before rotation so they stay glued to the robot. Cache key includes turret angle so turret tracks goal even during pure translation. |
 | `draw_hud()` | Dark panel on right side: phase label, STOPPED/PAUSED badge, countdown timer (muted gray when paused), motif circles, launch zone indicator (✓/✗), intake status (ON/OFF/COOLDOWN) with color-interpolated heat bar (green→yellow→orange→red) and cooldown timer, score breakdown, 9-slot ramp display, gate state, parking status 3-segment bar with status label |
 | `draw_match_end()` | Cached semi-transparent overlay with "MATCH OVER", final score, breakdown with colored parking result, F5/F10 prompt |
+| `draw_pause_menu()` | Semi-transparent overlay with centered panel containing 5 selectable buttons: Resume, Restart Game, Detect Gamepads, Options, Exit. Highlighted button shown with gold border. Navigation hint at bottom. Rendered when `timer_running` is False and phase is not FINISHED. |
+| `draw_options_screen()` | Full-screen overlay for keybind customization. Two tabs (KEYBOARD / GAMEPAD). Each tab lists all bindable actions with current binding and highlight for selected row. Supports rebinding pulse animation, duplicate binding warnings, locked binding indicators, and Reset to Default row. |
 
 ---
 
@@ -292,8 +321,8 @@ Three independent caches improve rendering performance:
 **Scoring rules:**
 | Event | Points | Notes |
 |---|---|---|
-| Artifact classified on ramp | +3 | Only if in launch zone (top triangle or base/parking zone) |
-| Overflow / Depot | +1 each | Only if in launch zone (top triangle or base/parking zone) |
+| Artifact classified on ramp | +3 | Only if in launch zone (top triangle, base/parking zone, or shooting zone) |
+| Overflow / Depot | +1 each | Only if in launch zone (top triangle, base/parking zone, or shooting zone) |
 | Pattern match (per matching slot) | +2 | Evaluated at match end |
 | Full base return | +10 | Robot entirely inside base rect at match end |
 | Partial base return | +5 | Robot partially in base rect at match end |
@@ -316,15 +345,43 @@ Processes all Pygame events once per frame. Supports keyboard and gamepad simult
 **Internal helper functions:**
 | Function | Purpose |
 |---|---|
-| `_handle_field_drive(r, keys, dt)` | Process WASD movement in field-oriented mode |
-| `_handle_robot_drive(r, keys, dt)` | Process WASD movement in robot-oriented mode |
+| `_key_held(state, action, keys)` | Check if a keyboard action's key is currently held |
+| `_key_pressed(action, events, state)` | Check if a keyboard action's key was pressed this frame |
+| `_gamepad_button(action, events, state, jid)` | Check if a gamepad action's button was pressed this frame |
+| `_gamepad_axis(action, joy, state)` | Check if a gamepad action's axis is active (>0.5) |
+| `_gamepad_button_held(action, joy, state)` | Check if a gamepad action's button is currently held |
+| `_handle_field_drive(r, keys, dt, state)` | Process WASD movement in field-oriented mode |
+| `_handle_robot_drive(r, keys, dt, state)` | Process WASD movement in robot-oriented mode |
 | `_launch_held(state, r)` | Launch all held artifacts toward the goal |
 | `_toggle_gate(state, r)` | Toggle gate open if robot is within gate_range. Acquires `_physics_lock` internally to serialize with physics thread. |
 | `_try_pickup(state, r, in_front)` | Attempt to pick up nearest artifact in front cone |
 | `_handle_gamepad(state, r, joy, events, dt, in_front)` | Process gamepad stick, trigger, and button input |
+| `_execute_pause_action(state, index)` | Execute selected pause menu action (Resume/Restart/Detect Gamepads/Options/Exit) |
 
 **Return value:**
 - `handle_input(state, dt)` returns `True` if a reset was requested (F5 / gamepad Back); `None` otherwise. The caller performs the actual reset under the physics lock.
+
+**Joystick initialization:**
+- `init_joysticks(rescan=False)` — initializes all connected gamepads. If `rescan=True`, reinitializes the joystick subsystem for hot-plug support.
+
+**Pause menu navigation:**
+- When paused (and match not finished), keyboard Up/Down (or Numpad 8/2) or gamepad D-pad/stick navigate the 5-button pause menu
+- Enter/Space (keyboard) or A button (gamepad) selects the highlighted action
+- Navigation uses cooldowns (`_MENU_NAV_DELAY_MS = 200`) to prevent rapid-fire
+- Gamepad stick uses deadzone and `_menu_stick_used` flag for clean single-step navigation
+
+**Options screen (keybind customization):**
+- Accessed from pause menu "Options" button
+- Two tabs: KEYBOARD and GAMEPAD, switchable with Left/Right arrows (or Numpad 4/6), LB/RB, or gamepad D-pad left/right
+- Each tab lists all bindable actions with current binding; selected row highlighted
+- Enter/A on a row starts rebinding mode (pulsing red-orange highlight)
+- During rebinding: press any key/button to assign, or Backspace/B to clear
+- Escape/backspace exits Options screen (returns to pause menu)
+- "Reset to Default" row at bottom restores all bindings on current tab
+- Duplicate bindings shown with `!` warning indicator
+- Locked bindings (gamepad Reset) shown as `(Fixed)`
+- Navigation cooldown prevents rapid-fire on all input methods
+- **Keybinds persist** across game sessions: saved to `keybinds.json` in the game directory after every change (rebind, clear, or reset). Loaded on startup. Falls back to `DEFAULT_KEYBINDS` if file is missing or corrupt.
 
 **Timer controls** (always active, even when paused/stopped):
 | Key | Action |
@@ -363,7 +420,7 @@ Processes all Pygame events once per frame. Supports keyboard and gamepad simult
 | Right trigger (axis 5) | Hold to intake (continuously picks up artifacts in front cone while held; blocked when overheated) |
 | X (2) | Toggle gate open (must be within gate_range of gate) |
 | Y (3) | Pause / Resume toggle |
-| B (1) | Toggle drive mode (robot ↔ field) |
+| Left Bumper (4) | Toggle drive mode (robot ↔ field) |
 | Back / Select (6) | Reset game |
 
 **Drive modes:**
@@ -371,7 +428,7 @@ Processes all Pygame events once per frame. Supports keyboard and gamepad simult
 - `"field"`: W = world-up, S = world-down, A/D = world-left/right, Left/Right = rotate
 - Gamepad: left stick moves in world axes in field mode, relative to robot heading in robot mode
 - Badge at field top-left shows current mode
-- Toggle with `R` (keyboard) or `B` (gamepad)
+- Toggle with `R` (keyboard) or `Left Bumper` (gamepad)
 - **Default on startup: `"field"`**
 
 **Gate behavior:**
@@ -409,6 +466,8 @@ Processes all Pygame events once per frame. Supports keyboard and gamepad simult
 - `intake_heat`, `intake_overheated`, and `intake_cooldown_timer` are all reset to zero on pause/finish
 - Timer digits shown in muted gray; STOPPED or PAUSED badge displayed on HUD
 - Physics simulation also frozen (artifacts stop moving)
+- A pause menu overlay appears with selectable buttons (Resume, Restart Game, Detect Gamepads, Options, Exit)
+- Navigation via keyboard arrows or gamepad D-pad/stick; selection via Enter/Space or gamepad A button
 
 ---
 
@@ -440,6 +499,7 @@ acquire _physics_lock                   acquire _physics_lock
   draw_robot()                            update_artifact_physics()
   draw_hud()                              _update_flying_and_gate()
   draw_match_end()                     release _physics_lock
+  draw_pause_menu()
 release _physics_lock
 smoothscale + display.flip()
 clock.tick_busy_loop(120)

@@ -7,16 +7,67 @@ import sys
 import random
 
 import pygame
-from config import CONFIG, FX, FY, FS, clamp, dist
+from config import CONFIG, FX, FY, FS, clamp, dist, DEFAULT_KEYBINDS, LOCKED_KEYBINDS, save_keybinds
 from game_state import Artifact, FlyingArtifact, get_ramp_scatter_positions
 from game_logic import _physics_lock
 
 _joysticks: list = []
 _trigger_cooldown: dict = {}
+_menu_nav_cooldown: dict = {}
+_MENU_NAV_DELAY_MS = 200
 
 
-def init_joysticks():
-    """Initialize all connected gamepads."""
+# ============================================================
+# KEYBIND HELPERS
+# ============================================================
+def _key_held(state, action, keys):
+    """Check if a keyboard action's key is currently held."""
+    binding = state.keybinds["keyboard"].get(action)
+    return binding is not None and binding[0] == "key" and keys[binding[1]]
+
+
+def _key_pressed(action, events, state):
+    """Check if a keyboard action's key was pressed this frame."""
+    binding = state.keybinds["keyboard"].get(action)
+    return (binding is not None and binding[0] == "key" and
+            any(e.type == pygame.KEYDOWN and e.key == binding[1] for e in events))
+
+
+def _gamepad_button(action, events, state, jid):
+    """Check if a gamepad action's button was pressed this frame."""
+    binding = state.keybinds["gamepad"].get(action)
+    return (binding is not None and binding[0] == "button" and
+            any(e.type == pygame.JOYBUTTONDOWN and e.joy == jid and e.button == binding[1]
+                for e in events))
+
+
+def _gamepad_axis(action, joy, state):
+    """Check if a gamepad action's axis is active (>0.5)."""
+    binding = state.keybinds["gamepad"].get(action)
+    if binding and binding[0] == "axis":
+        n = joy.get_numaxes()
+        if binding[1] < n:
+            return joy.get_axis(binding[1]) > 0.5
+    return False
+
+
+def _gamepad_button_held(action, joy, state):
+    """Check if a gamepad action's button is currently held."""
+    binding = state.keybinds["gamepad"].get(action)
+    if binding and binding[0] == "button":
+        n = joy.get_numbuttons()
+        if binding[1] < n:
+            return joy.get_button(binding[1])
+    return False
+
+
+def init_joysticks(rescan=False):
+    """Initialize all connected gamepads.
+    If rescan=True, reinitializes joystick subsystem for hot-plug support.
+    """
+    if rescan:
+        pygame.joystick.quit()
+        pygame.joystick.init()
     _joysticks.clear()
     for i in range(pygame.joystick.get_count()):
         try:
@@ -54,29 +105,233 @@ def handle_input(state, dt):
                 if state.phase != "FINISHED" and not state.timer_running:
                     state.timer_running = True
             elif e.key == pygame.K_ESCAPE:
-                if state.phase != "FINISHED":
-                    state.timer_running = not state.timer_running
+                if state.phase == "FINISHED":
+                    pass
+                elif state.options_active:
+                    state.options_active = False
+                elif state.timer_running:
+                    state.timer_running = False
+                    state.pause_menu_index = 0
+                else:
+                    state.timer_running = True
             elif e.key == pygame.K_F10:
                 pygame.quit()
                 sys.exit()
 
     for joy in _joysticks[:1]:
         jid = joy.get_id()
-        for e in events:
-            if e.type == pygame.JOYBUTTONDOWN and e.joy == jid:
-                if e.button == 6:  # Back / Select
-                    reset_requested = True
-                elif e.button == 3:  # Y — Pause / Resume toggle
-                    if state.phase != "FINISHED":
-                        state.timer_running = not state.timer_running
-                elif e.button == 1:  # B — Toggle drive mode
-                    state.robot.drive_mode = "robot" if state.robot.drive_mode == "field" else "field"
+        if _gamepad_button("Reset", events, state, jid):
+            reset_requested = True
+        elif _gamepad_button("Pause", events, state, jid):
+            if state.phase != "FINISHED" and not state.options_active:
+                if state.timer_running:
+                    state.timer_running = False
+                    state.pause_menu_index = 0
+                else:
+                    state.timer_running = True
+        elif _gamepad_button("Drive Mode", events, state, jid):
+            state.robot.drive_mode = "robot" if state.robot.drive_mode == "field" else "field"
 
     if reset_requested:
         return True
 
-    # Frozen when timer not running
-    if not state.timer_running:
+    # Pause menu navigation (when timer not running and match not finished)
+    if not state.timer_running and state.phase != "FINISHED" and not state.options_active:
+        num_btns = 5
+        for e in events:
+            if e.type == pygame.KEYDOWN:
+                if e.key in (pygame.K_UP, pygame.K_KP8):
+                    state.pause_menu_index = (state.pause_menu_index - 1) % num_btns
+                elif e.key in (pygame.K_DOWN, pygame.K_KP2):
+                    state.pause_menu_index = (state.pause_menu_index + 1) % num_btns
+                elif e.key in (pygame.K_RETURN, pygame.K_SPACE):
+                    return _execute_pause_action(state, state.pause_menu_index)
+
+        for joy in _joysticks[:1]:
+            jid = joy.get_id()
+            for e in events:
+                if e.type == pygame.JOYBUTTONDOWN and e.joy == jid:
+                    if e.button == 0:  # A
+                        return _execute_pause_action(state, state.pause_menu_index)
+            if joy.get_numhats() > 0:
+                hat = joy.get_hat(0)
+                now = pygame.time.get_ticks()
+                last_hat = _menu_nav_cooldown.get("hat", 0)
+                if now - last_hat >= _MENU_NAV_DELAY_MS:
+                    if hat[1] == 1:
+                        state.pause_menu_index = (state.pause_menu_index - 1) % num_btns
+                        _menu_nav_cooldown["hat"] = now
+                    elif hat[1] == -1:
+                        state.pause_menu_index = (state.pause_menu_index + 1) % num_btns
+                        _menu_nav_cooldown["hat"] = now
+            if joy.get_numaxes() > 1:
+                ly = joy.get_axis(1)
+                now = pygame.time.get_ticks()
+                last_stick = _menu_nav_cooldown.get("stick", 0)
+                if not hasattr(state, '_menu_stick_used'):
+                    state._menu_stick_used = False
+                if ly < -0.5 and not state._menu_stick_used and now - last_stick >= _MENU_NAV_DELAY_MS:
+                    state.pause_menu_index = (state.pause_menu_index - 1) % num_btns
+                    state._menu_stick_used = True
+                    _menu_nav_cooldown["stick"] = now
+                elif ly > 0.5 and not state._menu_stick_used and now - last_stick >= _MENU_NAV_DELAY_MS:
+                    state.pause_menu_index = (state.pause_menu_index + 1) % num_btns
+                    state._menu_stick_used = True
+                    _menu_nav_cooldown["stick"] = now
+                elif abs(ly) < 0.3:
+                    state._menu_stick_used = False
+
+        state.intake_active = False
+        state.intake_heat = 0.0
+        state.intake_overheated = False
+        state.intake_cooldown_timer = 0.0
+        return
+
+    # OPTIONS SCREEN INPUT
+    if state.options_active:
+        page_name = "keyboard" if state.options_page == 0 else "gamepad"
+        if state.options_page == 0:
+            from config import KEYBIND_ACTIONS_KEYBOARD as actions
+        else:
+            from config import KEYBIND_ACTIONS_GAMEPAD as actions
+        num_rows = len(actions) + 1  # +1 for Reset to Default row
+
+        for e in events:
+            if e.type == pygame.KEYDOWN:
+                if state.options_rebinding:
+                    if e.key == pygame.K_BACKSPACE:
+                        action = actions[state.options_index]
+                        state.keybinds["keyboard"][action] = None
+                        state.options_rebinding = False
+                        save_keybinds(state.keybinds)
+                    elif e.key == pygame.K_ESCAPE:
+                        state.options_rebinding = False
+                    else:
+                        action = actions[state.options_index]
+                        state.keybinds["keyboard"][action] = ("key", e.key)
+                        state.options_rebinding = False
+                        save_keybinds(state.keybinds)
+                else:
+                    if e.key == pygame.K_ESCAPE or e.key == pygame.K_BACKSPACE:
+                        state.options_active = False
+                        state.options_rebinding = False
+                    elif e.key in (pygame.K_UP, pygame.K_KP8):
+                        state.options_index = (state.options_index - 1) % num_rows
+                    elif e.key in (pygame.K_DOWN, pygame.K_KP2):
+                        state.options_index = (state.options_index + 1) % num_rows
+                    elif e.key in (pygame.K_RETURN, pygame.K_SPACE):
+                        if state.options_index == num_rows - 1:
+                            state.keybinds[page_name] = dict(DEFAULT_KEYBINDS[page_name])
+                            save_keybinds(state.keybinds)
+                        else:
+                            action = actions[state.options_index]
+                            if action not in LOCKED_KEYBINDS.get(page_name, set()):
+                                state.options_rebinding = True
+                    elif e.key in (pygame.K_LEFT, pygame.K_KP4):
+                        state.options_page = 0
+                        state.options_index = 0
+                        state.options_rebinding = False
+                    elif e.key in (pygame.K_RIGHT, pygame.K_KP6):
+                        state.options_page = 1
+                        state.options_index = 0
+                        state.options_rebinding = False
+
+        for joy in _joysticks[:1]:
+            jid = joy.get_id()
+            for e in events:
+                if e.type == pygame.JOYBUTTONDOWN and e.joy == jid:
+                    if state.options_rebinding:
+                        if e.button == 1:  # B — clear binding
+                            action = actions[state.options_index]
+                            state.keybinds["gamepad"][action] = None
+                            state.options_rebinding = False
+                            save_keybinds(state.keybinds)
+                        else:
+                            action = actions[state.options_index]
+                            state.keybinds["gamepad"][action] = ("button", e.button)
+                            state.options_rebinding = False
+                            save_keybinds(state.keybinds)
+                    else:
+                        if e.button == 1:  # B — back to pause menu
+                            state.options_active = False
+                        elif e.button == 0:  # A — start rebinding or reset
+                            if state.options_index == num_rows - 1:
+                                state.keybinds[page_name] = dict(DEFAULT_KEYBINDS[page_name])
+                                save_keybinds(state.keybinds)
+                            else:
+                                action = actions[state.options_index]
+                                if action not in LOCKED_KEYBINDS.get(page_name, set()):
+                                    state.options_rebinding = True
+                        elif e.button == 4:  # LB — previous tab
+                            state.options_page = 0
+                            state.options_index = 0
+                            state.options_rebinding = False
+                        elif e.button == 5:  # RB — next tab
+                            state.options_page = 1
+                            state.options_index = 0
+                            state.options_rebinding = False
+
+            for e in events:
+                if e.type == pygame.JOYAXISMOTION and e.joy == jid:
+                    if state.options_rebinding:
+                        if abs(e.value) > 0.5:
+                            action = actions[state.options_index]
+                            state.keybinds["gamepad"][action] = ("axis", e.axis)
+                            state.options_rebinding = False
+                            save_keybinds(state.keybinds)
+
+            if not state.options_rebinding and joy.get_numhats() > 0:
+                hat = joy.get_hat(0)
+                now = pygame.time.get_ticks()
+                last_hat = _menu_nav_cooldown.get("opt_hat", 0)
+                if now - last_hat >= _MENU_NAV_DELAY_MS:
+                    if hat[0] == -1:  # Left
+                        state.options_page = 0
+                        state.options_index = 0
+                        _menu_nav_cooldown["opt_hat"] = now
+                    elif hat[0] == 1:  # Right
+                        state.options_page = 1
+                        state.options_index = 0
+                        _menu_nav_cooldown["opt_hat"] = now
+                    if hat[1] == 1:
+                        state.options_index = (state.options_index - 1) % num_rows
+                        _menu_nav_cooldown["opt_hat"] = now
+                    elif hat[1] == -1:
+                        state.options_index = (state.options_index + 1) % num_rows
+                        _menu_nav_cooldown["opt_hat"] = now
+
+            if not state.options_rebinding and joy.get_numaxes() > 3:
+                lx = joy.get_axis(0)
+                ly = joy.get_axis(1)
+                now = pygame.time.get_ticks()
+                last_ox = _menu_nav_cooldown.get("opt_ox", 0)
+                last_oy = _menu_nav_cooldown.get("opt_oy", 0)
+                if not hasattr(state, '_opt_stick_used'):
+                    state._opt_stick_used = (False, False)
+                if lx < -0.5 and not state._opt_stick_used[0] and now - last_ox >= _MENU_NAV_DELAY_MS:
+                    state.options_page = 0
+                    state.options_index = 0
+                    state._opt_stick_used = (True, state._opt_stick_used[1])
+                    _menu_nav_cooldown["opt_ox"] = now
+                elif lx > 0.5 and not state._opt_stick_used[0] and now - last_ox >= _MENU_NAV_DELAY_MS:
+                    state.options_page = 1
+                    state.options_index = 0
+                    state._opt_stick_used = (True, state._opt_stick_used[1])
+                    _menu_nav_cooldown["opt_ox"] = now
+                elif abs(lx) < 0.3:
+                    state._opt_stick_used = (False, state._opt_stick_used[1])
+
+                if ly < -0.5 and not state._opt_stick_used[1] and now - last_oy >= _MENU_NAV_DELAY_MS:
+                    state.options_index = (state.options_index - 1) % num_rows
+                    state._opt_stick_used = (state._opt_stick_used[0], True)
+                    _menu_nav_cooldown["opt_oy"] = now
+                elif ly > 0.5 and not state._opt_stick_used[1] and now - last_oy >= _MENU_NAV_DELAY_MS:
+                    state.options_index = (state.options_index + 1) % num_rows
+                    state._opt_stick_used = (state._opt_stick_used[0], True)
+                    _menu_nav_cooldown["opt_oy"] = now
+                elif abs(ly) < 0.3:
+                    state._opt_stick_used = (state._opt_stick_used[0], False)
+
         state.intake_active = False
         state.intake_heat = 0.0
         state.intake_overheated = False
@@ -96,9 +351,9 @@ def handle_input(state, dt):
     r.vy = 0.0
 
     if r.drive_mode == "field":
-        _handle_field_drive(r, keys, dt)
+        _handle_field_drive(r, keys, dt, state)
     else:
-        _handle_robot_drive(r, keys, dt)
+        _handle_robot_drive(r, keys, dt, state)
 
     def in_front(ax, ay):
         """Check if (ax, ay) is within the robot's front pickup cone."""
@@ -113,17 +368,15 @@ def handle_input(state, dt):
         half_cone = math.radians(CONFIG["pickup_cone_angle"] / 2)
         return dot > math.cos(half_cone)
 
-    for e in events:
-        if e.type == pygame.KEYDOWN:
-            if e.key == pygame.K_q:
-                _launch_held(state, r)
-            elif e.key == pygame.K_r:
-                r.drive_mode = "robot" if r.drive_mode == "field" else "field"
-            elif e.key == pygame.K_t:
-                _toggle_gate(state, r)
-            elif e.key == pygame.K_e:
-                if not state.intake_overheated:
-                    state.intake_active = not state.intake_active
+    if _key_pressed("Launch Artifacts", events, state):
+        _launch_held(state, r)
+    if _key_pressed("Drive Mode", events, state):
+        r.drive_mode = "robot" if r.drive_mode == "field" else "field"
+    if _key_pressed("Toggle Gate", events, state):
+        _toggle_gate(state, r)
+    if _key_pressed("Toggle Intake", events, state):
+        if not state.intake_overheated:
+            state.intake_active = not state.intake_active
 
     if state.intake_active:
         _try_pickup(state, r, in_front)
@@ -132,16 +385,36 @@ def handle_input(state, dt):
         _handle_gamepad(state, r, joy, events, dt, in_front)
 
 
-def _handle_field_drive(r, keys, dt):
+def _execute_pause_action(state, index):
+    """Execute the selected pause menu action. Returns True if reset requested."""
+    if index == 0:  # Resume
+        state.timer_running = True
+    elif index == 1:  # Restart Game
+        return True
+    elif index == 2:  # Detect Gamepads
+        init_joysticks(rescan=True)
+        print(f"Detected {len(_joysticks)} gamepad(s)")
+    elif index == 3:  # Options
+        state.options_active = True
+        state.options_page = 0
+        state.options_index = 0
+        state.options_rebinding = False
+    elif index == 4:  # Exit
+        pygame.quit()
+        sys.exit()
+    return False
+
+
+def _handle_field_drive(r, keys, dt, state):
     """Process WASD movement in field-oriented mode."""
     dx, dy = 0, 0
-    if keys[pygame.K_w]:
+    if _key_held(state, "Move Forward", keys):
         dy = -1
-    if keys[pygame.K_s]:
+    if _key_held(state, "Move Backward", keys):
         dy = 1
-    if keys[pygame.K_a]:
+    if _key_held(state, "Strafe Left", keys):
         dx = -1
-    if keys[pygame.K_d]:
+    if _key_held(state, "Strafe Right", keys):
         dx = 1
     if dx != 0 or dy != 0:
         if dx != 0 and dy != 0:
@@ -154,36 +427,36 @@ def _handle_field_drive(r, keys, dt):
         r.x = clamp(r.x, FX, FX + FS)
         r.y = clamp(r.y, FY, FY + FS)
     rot = 0.0
-    if keys[pygame.K_LEFT]:
+    if _key_held(state, "Rotate Left", keys):
         rot -= 1
-    if keys[pygame.K_RIGHT]:
+    if _key_held(state, "Rotate Right", keys):
         rot += 1
     if rot != 0:
         r.angle += rot * math.radians(CONFIG["rotation_speed"]) * dt
 
 
-def _handle_robot_drive(r, keys, dt):
+def _handle_robot_drive(r, keys, dt, state):
     """Process WASD movement in robot-oriented mode."""
     fx = math.sin(r.angle)
     fy = -math.cos(r.angle)
     sx = math.cos(r.angle)
     sy = math.sin(r.angle)
-    if keys[pygame.K_w]:
+    if _key_held(state, "Move Forward", keys):
         r.vx += fx * r.speed
         r.vy += fy * r.speed
-    if keys[pygame.K_s]:
+    if _key_held(state, "Move Backward", keys):
         r.vx -= fx * r.speed
         r.vy -= fy * r.speed
-    if keys[pygame.K_a]:
+    if _key_held(state, "Strafe Left", keys):
         r.vx -= sx * r.speed
         r.vy -= sy * r.speed
-    if keys[pygame.K_d]:
+    if _key_held(state, "Strafe Right", keys):
         r.vx += sx * r.speed
         r.vy += sy * r.speed
     rot = 0.0
-    if keys[pygame.K_LEFT]:
+    if _key_held(state, "Rotate Left", keys):
         rot -= 1
-    if keys[pygame.K_RIGHT]:
+    if _key_held(state, "Rotate Right", keys):
         rot += 1
     if rot != 0:
         r.angle += rot * math.radians(CONFIG["rotation_speed"]) * dt
@@ -268,8 +541,8 @@ def _handle_gamepad(state, r, joy, events, dt, in_front):
         r.y += mvy * r.speed * dt
         r.x = clamp(r.x, FX, FX + FS)
         r.y = clamp(r.y, FY, FY + FS)
-    lt = joy.get_axis(4) > 0.5 if joy.get_numaxes() > 4 else 0
-    rt = joy.get_axis(5) > 0.5 if joy.get_numaxes() > 5 else 0
+    lt = _gamepad_axis("Launch", joy, state) or _gamepad_button("Launch", events, state, joy.get_id())
+    rt = _gamepad_axis("Intake", joy, state) or _gamepad_button_held("Intake", joy, state)
     jid = joy.get_id()
 
     # Left trigger: launch (edge-detect, press only)
@@ -288,8 +561,6 @@ def _handle_gamepad(state, r, joy, events, dt, in_front):
     if state.intake_active:
         _try_pickup(state, r, in_front)
 
-    for e in events:
-        if e.type == pygame.JOYBUTTONDOWN and e.joy == jid:
-            if e.button == 2:
-                _toggle_gate(state, r)
+    if _gamepad_button("Gate", events, state, jid) or _gamepad_axis("Gate", joy, state):
+        _toggle_gate(state, r)
 

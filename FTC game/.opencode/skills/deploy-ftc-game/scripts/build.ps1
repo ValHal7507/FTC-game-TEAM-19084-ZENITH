@@ -3,8 +3,8 @@
 # Run from the workspace root (FTC-game-TEAM-19084-ZENITH/)
 
 $ErrorActionPreference = "Stop"
-$workspaceRoot = Join-Path $PSScriptRoot "..\..\..\.."
-$specDir = Join-Path $PSScriptRoot "..\..\.."
+$workspaceRoot = Join-Path $PSScriptRoot "..\..\..\..\.."
+$specDir = Join-Path $PSScriptRoot "..\..\..\.."
 $specFile = Join-Path $specDir "FTC_DECODE_Simulator.spec"
 $exeDest = Join-Path $workspaceRoot "EXECUTABLE\FTC_DECODE_Simulator.exe"
 

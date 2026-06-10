@@ -8,7 +8,7 @@ from dataclasses import dataclass, field
 from typing import ClassVar, List, Optional, Tuple
 
 import pygame
-from config import CONFIG, FX, FY, FS, dist
+from config import CONFIG, FX, FY, FS, dist, DEFAULT_KEYBINDS, load_keybinds
 from game_logic import rebuild_obstacle_cache
 
 
@@ -158,6 +158,15 @@ class GameState:
         self.secret_tunnel = (FX + FS // 2, FY + FS // 2 + 60)
         self.scored = False
         self.park_status = "NONE"
+        self.pause_menu_index = 0
+        self.options_active = False
+        self.options_page = 0
+        self.options_index = 0
+        self.options_rebinding = False
+        self.keybinds = {page: dict(bindings) for page, bindings in DEFAULT_KEYBINDS.items()}
+        saved = load_keybinds()
+        if saved:
+            self.keybinds = saved
         self._init_artifacts()
         rebuild_obstacle_cache(self)
 

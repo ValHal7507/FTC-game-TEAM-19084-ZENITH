@@ -5,7 +5,7 @@ One purple robot collecting artifacts, classifying them into a goal.
 
 import pygame
 from config import CONFIG, VW, VH, BLACK, render_surf
-from drawing import init_drawing, draw_field, draw_artifacts, draw_robot, draw_hud, draw_match_end
+from drawing import init_drawing, draw_field, draw_artifacts, draw_robot, draw_hud, draw_match_end, draw_pause_menu, draw_options_screen
 from game_logic import (
     update_timer, update_turret_angle,
     _physics_lock, start_physics_thread, stop_physics_thread,
@@ -61,6 +61,10 @@ def main():
                 draw_hud(render_surf, state)
                 if state.phase == "FINISHED":
                     draw_match_end(render_surf, state)
+                if not state.timer_running and state.phase != "FINISHED":
+                    draw_pause_menu(render_surf, state)
+                if state.options_active:
+                    draw_options_screen(render_surf, state)
 
             win_w, win_h = win.get_size()
             sx = win_w / VW

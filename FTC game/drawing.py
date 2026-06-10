@@ -14,6 +14,10 @@ from config import (
     GATE_COLOR, GATE_OPEN_COLOR,
     PURPLE, GREEN, GOLD, ORANGE, RED_ACCENT, PARK_GREEN,
     HEAT_GREEN, HEAT_YELLOW, HEAT_ORANGE, HEAT_RED,
+    PAUSE_OVERLAY, MENU_BG, MENU_BORDER, MENU_HIGHLIGHT_BG,
+    MENU_HIGHLIGHT_BORDER, MENU_TEXT, MENU_TITLE,
+    OPTIONS_REBIND, OPTIONS_BIND,
+    GAMEPAD_NAMES, LOCKED_KEYBINDS,
     lerp,
 )
 
@@ -670,3 +674,198 @@ def draw_match_end(screen, state):
     if _end_overlay is None:
         _build_end_overlay(state)
     screen.blit(_end_overlay, (0, 0))
+
+
+# ============================================================
+# PAUSE MENU
+# ============================================================
+_PAUSE_MENU_BUTTONS = ["Resume", "Restart Game", "Detect Gamepads", "Options", "Exit"]
+_pause_menu_rects = []
+
+
+def draw_pause_menu(screen, state):
+    """Draw the pause menu overlay with selectable buttons."""
+    global _pause_menu_rects
+
+    overlay = pygame.Surface((W, H), pygame.SRCALPHA)
+    overlay.fill(PAUSE_OVERLAY)
+    screen.blit(overlay, (0, 0))
+
+    panel_w, panel_h = 320, 370
+    panel_x = (W - panel_w) // 2
+    panel_y = (H - panel_h) // 2
+
+    panel = pygame.Surface((panel_w, panel_h), pygame.SRCALPHA)
+    panel.fill((*MENU_BG, 240))
+    pygame.draw.rect(panel, MENU_BORDER, (0, 0, panel_w, panel_h), 2, border_radius=8)
+    screen.blit(panel, (panel_x, panel_y))
+
+    title = f_hud.render("PAUSED", True, MENU_TITLE)
+    screen.blit(title, (panel_x + panel_w // 2 - title.get_width() // 2, panel_y + 20))
+
+    pygame.draw.line(screen, MENU_BORDER, (panel_x + 20, panel_y + 65), (panel_x + panel_w - 20, panel_y + 65), 1)
+
+    _pause_menu_rects = []
+    btn_w = 240
+    btn_h = 42
+    btn_x = panel_x + (panel_w - btn_w) // 2
+    start_y = panel_y + 85
+    gap = 52
+
+    for i, label in enumerate(_PAUSE_MENU_BUTTONS):
+        btn_y = start_y + i * gap
+        btn_rect = pygame.Rect(btn_x, btn_y, btn_w, btn_h)
+        _pause_menu_rects.append(btn_rect)
+
+        if i == state.pause_menu_index:
+            pygame.draw.rect(screen, MENU_HIGHLIGHT_BG, btn_rect, border_radius=6)
+            pygame.draw.rect(screen, MENU_HIGHLIGHT_BORDER, btn_rect, 2, border_radius=6)
+            txt = f_small.render(label, True, MENU_HIGHLIGHT_BORDER)
+        else:
+            pygame.draw.rect(screen, (*MENU_BG, 200), btn_rect, border_radius=6)
+            pygame.draw.rect(screen, (*MENU_BORDER, 120), btn_rect, 1, border_radius=6)
+            txt = f_small.render(label, True, MENU_TEXT)
+
+        screen.blit(txt, (btn_rect.centerx - txt.get_width() // 2,
+                          btn_rect.centery - txt.get_height() // 2))
+
+    hint = f_tiny.render("Up/Down: navigate  Enter: select", True, GRAY)
+    screen.blit(hint, (panel_x + panel_w // 2 - hint.get_width() // 2,
+                       panel_y + panel_h - 30))
+
+
+# ============================================================
+# OPTIONS SCREEN
+# ============================================================
+def draw_options_screen(screen, state):
+    """Full-screen overlay for keybind customization."""
+    overlay = pygame.Surface((W, H), pygame.SRCALPHA)
+    overlay.fill(PAUSE_OVERLAY)
+    screen.blit(overlay, (0, 0))
+
+    panel_w, panel_h = 700, 520
+    panel_x = (W - panel_w) // 2
+    panel_y = (H - panel_h) // 2
+    pygame.draw.rect(screen, MENU_BG, (panel_x, panel_y, panel_w, panel_h), border_radius=10)
+    pygame.draw.rect(screen, MENU_BORDER, (panel_x, panel_y, panel_w, panel_h), 2, border_radius=10)
+
+    title = f_hud.render("OPTIONS", True, MENU_TITLE)
+    screen.blit(title, (panel_x + panel_w // 2 - title.get_width() // 2, panel_y + 16))
+
+    pygame.draw.line(screen, MENU_BORDER,
+                     (panel_x + 20, panel_y + 60),
+                     (panel_x + panel_w - 20, panel_y + 60), 1)
+
+    tab_labels = ["KEYBOARD", "GAMEPAD"]
+    tab_w = 140
+    tab_h = 30
+    tab_gap = 20
+    tabs_total_w = len(tab_labels) * tab_w + (len(tab_labels) - 1) * tab_gap
+    tab_start_x = panel_x + (panel_w - tabs_total_w) // 2
+    tab_y = panel_y + 72
+
+    for i, label in enumerate(tab_labels):
+        tx = tab_start_x + i * (tab_w + tab_gap)
+        rect = pygame.Rect(tx, tab_y, tab_w, tab_h)
+        if i == state.options_page:
+            pygame.draw.rect(screen, MENU_HIGHLIGHT_BG, rect, border_radius=5)
+            pygame.draw.rect(screen, MENU_HIGHLIGHT_BORDER, rect, 2, border_radius=5)
+            txt = f_tiny.render(label, True, MENU_HIGHLIGHT_BORDER)
+        else:
+            pygame.draw.rect(screen, (*MENU_BG, 200), rect, border_radius=5)
+            pygame.draw.rect(screen, (*MENU_BORDER, 120), rect, 1, border_radius=5)
+            txt = f_tiny.render(label, True, MENU_TEXT)
+        screen.blit(txt, (rect.centerx - txt.get_width() // 2,
+                          rect.centery - txt.get_height() // 2))
+
+    if state.options_page == 0:
+        from config import KEYBIND_ACTIONS_KEYBOARD
+        actions = KEYBIND_ACTIONS_KEYBOARD
+    else:
+        from config import KEYBIND_ACTIONS_GAMEPAD
+        actions = KEYBIND_ACTIONS_GAMEPAD
+
+    page_name = "keyboard" if state.options_page == 0 else "gamepad"
+    binds = state.keybinds.get(page_name, {})
+    num_rows = len(actions) + 1  # +1 for Reset to Default row
+
+    row_y = tab_y + 48
+    row_h = 32
+    col_action_x = panel_x + 30
+    col_bind_x = panel_x + panel_w - 200
+
+    dup_actions = set()
+    binding_to_actions = {}
+    for a in actions:
+        b = binds.get(a)
+        if b:
+            binding_to_actions.setdefault(b, []).append(a)
+    for b, acts in binding_to_actions.items():
+        if len(acts) > 1:
+            dup_actions.update(acts)
+
+    for i, action in enumerate(actions):
+        ry = row_y + i * row_h
+        is_selected = (i == state.options_index)
+
+        if is_selected:
+            sel_rect = pygame.Rect(panel_x + 15, ry - 2, panel_w - 30, row_h)
+            if state.options_rebinding:
+                pulse = abs(math.sin(pygame.time.get_ticks() * 0.006)) * 0.4 + 0.6
+                c = tuple(int(v * pulse) for v in OPTIONS_REBIND)
+                pygame.draw.rect(screen, c, sel_rect, border_radius=4)
+            else:
+                pygame.draw.rect(screen, MENU_HIGHLIGHT_BG, sel_rect, border_radius=4)
+
+        action_txt = f_tiny.render(action, True, MENU_HIGHLIGHT_BORDER if is_selected else MENU_TEXT)
+        screen.blit(action_txt, (col_action_x, ry + 6))
+
+        binding = binds.get(action)
+        if binding:
+            if binding[0] == "key":
+                key_name = pygame.key.name(binding[1]).upper()
+                bind_str = key_name
+            elif binding[0] == "button":
+                bind_str = GAMEPAD_NAMES.get(binding, f"Btn {binding[1]}")
+            elif binding[0] == "axis":
+                bind_str = GAMEPAD_NAMES.get(binding, f"Axis {binding[1]}")
+            else:
+                bind_str = "?"
+        else:
+            bind_str = "—"
+
+        if state.options_rebinding and is_selected:
+            bind_color = OPTIONS_REBIND
+            bind_str = "..."
+        elif is_selected:
+            bind_color = OPTIONS_BIND
+        else:
+            bind_color = GRAY
+
+        if action in LOCKED_KEYBINDS.get(page_name, set()):
+            bind_str = "(Fixed)"
+            bind_color = GRAY
+
+        bind_txt = f_tiny.render(bind_str, True, bind_color)
+        screen.blit(bind_txt, (col_bind_x, ry + 6))
+
+        if action in dup_actions:
+            warn = f_tiny.render("!", True, RED_ACCENT)
+            screen.blit(warn, (col_bind_x - 20, ry + 6))
+
+    reset_y = row_y + (num_rows - 1) * row_h + 4
+    is_reset_selected = (state.options_index == num_rows - 1)
+    if is_reset_selected:
+        reset_rect = pygame.Rect(panel_x + 15, reset_y - 2, panel_w - 30, row_h)
+        pygame.draw.rect(screen, MENU_HIGHLIGHT_BG, reset_rect, border_radius=4)
+    reset_label = "Reset to Default"
+    reset_color = MENU_HIGHLIGHT_BORDER if is_reset_selected else MENU_TEXT
+    reset_txt = f_tiny.render(reset_label, True, reset_color)
+    screen.blit(reset_txt, (col_action_x, reset_y + 6))
+    if is_reset_selected:
+        reset_hint = f_tiny.render("(press Enter)", True, OPTIONS_BIND)
+        screen.blit(reset_hint, (col_bind_x, reset_y + 6))
+
+    hint_y = panel_y + panel_h - 32
+    hint1 = f_tiny.render("Up/Down: navigate  Enter/A: rebind/select  Backspace/B: back", True, GRAY)
+    screen.blit(hint1, (panel_x + panel_w // 2 - hint1.get_width() // 2, hint_y))

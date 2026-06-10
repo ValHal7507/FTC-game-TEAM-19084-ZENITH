@@ -1,0 +1,70 @@
+{
+  "keyboard": {
+    "Move Forward": [
+      "key",
+      119
+    ],
+    "Move Backward": [
+      "key",
+      115
+    ],
+    "Strafe Left": [
+      "key",
+      97
+    ],
+    "Strafe Right": [
+      "key",
+      100
+    ],
+    "Rotate Left": [
+      "key",
+      1073741904
+    ],
+    "Rotate Right": [
+      "key",
+      1073741903
+    ],
+    "Toggle Intake": [
+      "key",
+      101
+    ],
+    "Launch Artifacts": [
+      "key",
+      113
+    ],
+    "Toggle Gate": [
+      "key",
+      116
+    ],
+    "Drive Mode": [
+      "key",
+      114
+    ]
+  },
+  "gamepad": {
+    "Launch": [
+      "axis",
+      4
+    ],
+    "Intake": [
+      "axis",
+      5
+    ],
+    "Gate": [
+      "button",
+      2
+    ],
+    "Pause": [
+      "button",
+      3
+    ],
+    "Drive Mode": [
+      "button",
+      4
+    ],
+    "Reset": [
+      "button",
+      6
+    ]
+  }
+}

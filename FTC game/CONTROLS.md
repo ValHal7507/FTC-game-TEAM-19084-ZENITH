@@ -26,6 +26,8 @@ Jocul dispune de **doua moduri de deplasare**, comutabile cu tasta `R` (tastatur
 
 Modul curent este afisat intr-un badge in coltul stanga sus al terenului.
 
+> Pe controler, modul se comuta cu `LB` (butonul 4).
+
 ---
 
 ## Control cu tastatura
@@ -56,7 +58,7 @@ Modul curent este afisat intr-un badge in coltul stanga sus al terenului.
 |---|---|
 | `F5` | Reseteaza jocul (opreste totul, repune artefactele) |
 | `F6` | Porneste cronometrul (doar cand e oprit) |
-| `ESC` | Pauza / Resume |
+| `ESC` | Pauza / Resume (sau inchide ecranul Options daca e deschis) |
 | `F10` | Iesire din joc |
 
 ---
@@ -87,7 +89,7 @@ Modul curent este afisat intr-un badge in coltul stanga sus al terenului.
 |---|---|
 | `X` (butonul 2) | Deschide / inchide poarta ( trebuie sa fii in raza de actiune ) |
 | `Y` (butonul 3) | Pauza / Resume |
-| `B` (butonul 1) | Comuteaza modul de deplasare (Robot / Field) |
+| `LB` (butonul 4) | Comuteaza modul de deplasare (Robot / Field) |
 | `Back / Select` (butonul 6) | Reseteaza jocul |
 
 ---
@@ -150,8 +152,26 @@ Scopul este sa colectezi artefacte de pe teren, sa le clasifici pe rampa si sa l
 
 - `ESC` (tastatura) / `Y` (controler) — pune pe pauza / reia cronometrul
 - Cand cronometrul e oprit, robotul **nu se misca** si nu poate interactiona
+- Starea intakes-ului (pornit/oprit, caldura, cooldown) se reseteaza la fiecare pauza, sfarsit de meci sau reset
+- Navigare meniu pauza: `↑`/`↓` sau `KP8`/`KP2` (numpad), D-pad/Stick (controler)
+- Selectie: `Enter`/`Space` (tastatura) sau `A` (controler)
 - `F5` (tastatura) / `Back` (controler) — reseteaza intregul joc (teren, artefacte, scor)
 - `F10` — iesire din joc
+
+### Ecranul Options (Personalizare taste)
+
+Din meniul de pauza, selecteaza **Options** pentru a personaliza tastele si butoanele:
+
+- Doua tab-uri: **KEYBOARD** si **GAMEPAD**, comutabile cu sagetile Left/Right (`KP4`/`KP6` pe numpad) sau bumperele LB/RB
+- Navigheaza cu sagetile Up/Down (`KP8`/`KP2` pe numpad) sau D-pad/Stick (controler)
+- Apasa **Enter** (tastatura) sau **A** (controler) pe un rand pentru a incepe rebinding-ul
+- In timpul rebinding-ului: apasa orice tasta/but nou pentru a atribui, sau **Backspace** (tastatura) / **B** (controler) pentru a sterge
+- **Escape** (tastatura) sau **B** (controler) iesi din ecranul Options
+- Randul **Reset to Default** din partea de jos restaureaza toate tastele la valorile implicite
+- Legaturi duplicat sunt marcate cu `!`
+- Legaturi blocate (Reset pe controler) sunt marcate ca `(Fixed)`
+
+> Setarile de taste sunt salvate automat intr-un fisier `keybinds.json` in folderul jocului si persista intre sesiuni. La prima pornire se folosesc valorile implicite.
 
 ---
 

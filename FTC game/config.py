@@ -2,7 +2,12 @@
 FTC DECODE — Colors, configuration constants, and helpers.
 """
 
+import json
 import math
+import os
+import sys
+
+import pygame
 
 # ============================================================
 # COLORS
@@ -43,6 +48,16 @@ HEAT_GREEN = (60, 200, 80)
 HEAT_YELLOW = (230, 200, 40)
 HEAT_ORANGE = (240, 140, 30)
 HEAT_RED = (220, 50, 40)
+
+PAUSE_OVERLAY = (0, 0, 0, 180)
+MENU_BG = (30, 30, 36)
+MENU_BORDER = (210, 170, 60)
+MENU_HIGHLIGHT_BG = (60, 55, 45)
+MENU_HIGHLIGHT_BORDER = (255, 210, 40)
+MENU_TEXT = (220, 220, 230)
+MENU_TITLE = (255, 210, 40)
+OPTIONS_REBIND = (255, 100, 60)
+OPTIONS_BIND = (100, 200, 140)
 
 # ============================================================
 # CONFIG
@@ -116,3 +131,115 @@ def clamp(v, lo, hi):
 
 def lerp(a, b, t):
     return a + (b - a) * t
+
+
+# ============================================================
+# KEYBINDS
+# ============================================================
+GAMEPAD_NAMES = {
+    ("button", 0): "A",
+    ("button", 1): "B",
+    ("button", 2): "X",
+    ("button", 3): "Y",
+    ("button", 4): "LB",
+    ("button", 5): "RB",
+    ("button", 6): "Back",
+    ("button", 7): "Start",
+    ("button", 8): "LS",
+    ("button", 9): "RS",
+    ("axis", 0): "Left Stick X",
+    ("axis", 1): "Left Stick Y",
+    ("axis", 2): "Right Stick X",
+    ("axis", 3): "Right Stick Y",
+    ("axis", 4): "LT (axis 4)",
+    ("axis", 5): "RT (axis 5)",
+}
+
+KEYBIND_ACTIONS_KEYBOARD = [
+    "Move Forward",
+    "Move Backward",
+    "Strafe Left",
+    "Strafe Right",
+    "Rotate Left",
+    "Rotate Right",
+    "Toggle Intake",
+    "Launch Artifacts",
+    "Toggle Gate",
+    "Drive Mode",
+]
+
+KEYBIND_ACTIONS_GAMEPAD = [
+    "Launch",
+    "Intake",
+    "Gate",
+    "Pause",
+    "Drive Mode",
+]
+
+DEFAULT_KEYBINDS = {
+    "keyboard": {
+        "Move Forward": ("key", pygame.K_w),
+        "Move Backward": ("key", pygame.K_s),
+        "Strafe Left": ("key", pygame.K_a),
+        "Strafe Right": ("key", pygame.K_d),
+        "Rotate Left": ("key", pygame.K_LEFT),
+        "Rotate Right": ("key", pygame.K_RIGHT),
+        "Toggle Intake": ("key", pygame.K_e),
+        "Launch Artifacts": ("key", pygame.K_q),
+        "Toggle Gate": ("key", pygame.K_t),
+        "Drive Mode": ("key", pygame.K_r),
+    },
+    "gamepad": {
+        "Launch": ("axis", 4),
+        "Intake": ("axis", 5),
+        "Gate": ("button", 2),
+        "Pause": ("button", 3),
+        "Drive Mode": ("button", 4),
+        "Reset": ("button", 6),
+    },
+}
+
+LOCKED_KEYBINDS = {"keyboard": set(), "gamepad": {"Reset"}}
+
+
+# ============================================================
+# KEYBIND PERSISTENCE
+# ============================================================
+def _game_dir():
+    """Return the directory containing the main script or executable."""
+    if getattr(sys, 'frozen', False):
+        return os.path.dirname(os.path.abspath(sys.executable))
+    return os.path.dirname(os.path.abspath(__file__))
+
+
+_KEYBINDS_FILE = os.path.join(_game_dir(), "keybinds.json")
+
+
+def save_keybinds(keybinds):
+    """Write current keybinds to keybinds.json. Never raises."""
+    try:
+        data = {}
+        for page, bindings in keybinds.items():
+            data[page] = {action: list(binding) if binding else None
+                          for action, binding in bindings.items()}
+        with open(_KEYBINDS_FILE, "w") as f:
+            json.dump(data, f, indent=2)
+    except Exception:
+        pass
+
+
+def load_keybinds():
+    """Load keybinds from keybinds.json. Returns dict or None on failure."""
+    try:
+        with open(_KEYBINDS_FILE, "r") as f:
+            data = json.load(f)
+        if "keyboard" not in data or "gamepad" not in data:
+            return None
+        result = {}
+        for page in ("keyboard", "gamepad"):
+            result[page] = {action: tuple(binding) if binding else None
+                            for action, binding in data[page].items()}
+        return result
+    except Exception:
+        print("  [keybinds] No saved keybinds found, using defaults")
+        return None
