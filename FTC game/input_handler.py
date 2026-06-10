@@ -9,6 +9,7 @@ import random
 import pygame
 from config import CONFIG, FX, FY, FS, clamp, dist
 from game_state import Artifact, FlyingArtifact, get_ramp_scatter_positions
+from game_logic import _physics_lock
 
 _joysticks: list = []
 _trigger_cooldown: dict = {}
@@ -214,16 +215,17 @@ def _toggle_gate(state, r):
     gt = state.gate_rect()
     if dist((r.x, r.y), (gt.centerx, gt.centery)) < CONFIG["gate_range"]:
         if not state.team.gate_open:
-            state.team.gate_open = True
-            state.team.gate_timer = CONFIG["gate_open_duration"]
-            cleared = state.team.clear_ramp()
-            positions = get_ramp_scatter_positions(state)
-            for c in cleared:
-                tx, ty = random.choice(positions)
-                a = Artifact(tx, ty, c,
-                    vx=random.uniform(-40, 40), vy=random.uniform(-40, 40),
-                    zone="alliance", index=0)
-                state.artifacts.append(a)
+            with _physics_lock:
+                state.team.gate_open = True
+                state.team.gate_timer = CONFIG["gate_open_duration"]
+                cleared = state.team.clear_ramp()
+                positions = get_ramp_scatter_positions(state)
+                for c in cleared:
+                    tx, ty = random.choice(positions)
+                    a = Artifact(tx, ty, c,
+                        vx=random.uniform(-40, 40), vy=random.uniform(-40, 40),
+                        zone="alliance", index=0)
+                    state.artifacts.append(a)
 
 
 def _try_pickup(state, r, in_front):

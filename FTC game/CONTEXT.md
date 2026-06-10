@@ -27,12 +27,12 @@ No external dependencies beyond Python stdlib and `pygame`.
 
 - Initializes Pygame, creates a **resizable window** (`pygame.RESIZABLE`) titled `"FTC DECODE — Robot simulator by TEAM ZENITH 19084"`
 - Creates a fixed-size **virtual canvas** (`1050 × 730`) that all drawing targets
-- Each frame: input → timer → turret update → render (under lock) → smoothscale to window (aspect-ratio-preserving with black letterbox bars)
+- Each frame: input → turret update → (under lock) timer → render → smoothscale to window (aspect-ratio-preserving with black letterbox bars)
 - Uses `clock.tick_busy_loop(fps)` for precise frame pacing
 - Calls `init_drawing()` after `pygame.init()` to initialize fonts (must happen after pygame init)
 - Detects and initializes joysticks on startup via `input_handler.init_joysticks()`
 - **Physics thread**: spawns a background thread via `start_physics_thread(state)` that runs `update_physics()` at 60 Hz under `_physics_lock`
-- **Thread safety**: Acquires `_physics_lock` during render to prevent physics mutations mid-draw; reset is also performed under lock
+- **Thread safety**: Acquires `_physics_lock` during render to prevent physics mutations mid-draw; `update_timer()` also runs under this lock so scoring is atomic with respect to flying artifact updates; reset is also performed under lock
 - **Turret tracking**: `update_turret_angle(state)` runs on the main thread every frame (outside lock) so the turret always tracks the goal in real time
 - `handle_input()` returns `True` when reset is requested; main.py performs `state.reset()` under the physics lock
 
@@ -245,7 +245,7 @@ Three independent caches improve rendering performance:
 
 | Function | Responsibility |
 |---|---|
-| `update_timer(state, dt)` | Decrements timer only if `timer_running`; at 20s switches to `ENDGAME`; at 0s triggers scoring and sets `FINISHED` |
+| `update_timer(state, dt)` | Decrements timer only if `timer_running`; at 20s switches to `ENDGAME`; at 0s triggers scoring, sets `FINISHED`, sets `timer_running = False`, and clears robot velocity |
 | `score_pattern(state)` | Each ramp slot matching `motif[i % 3]` → +2 points |
 | `score_base(state)` | Robot fully inside base → 10 pts, partial → 5 pts |
 | `update_artifact_physics(state, dt)` | 2D physics with early-exit optimization: velocity integration, exponential friction, field-wall bounce with restitution, goal+depot merged-obstacle containment push-out + bounce, artifact–artifact collision resolution, robot–artifact push with restitution + extra push force. Uses cached obstacle rect and local variable aliases for performance. |
@@ -313,7 +313,7 @@ Processes all Pygame events once per frame. Supports keyboard and gamepad simult
 | `_handle_field_drive(r, keys, dt)` | Process WASD movement in field-oriented mode |
 | `_handle_robot_drive(r, keys, dt)` | Process WASD movement in robot-oriented mode |
 | `_launch_held(state, r)` | Launch all held artifacts toward the goal |
-| `_toggle_gate(state, r)` | Toggle gate open if robot is within gate_range |
+| `_toggle_gate(state, r)` | Toggle gate open if robot is within gate_range. Acquires `_physics_lock` internally to serialize with physics thread. |
 | `_try_pickup(state, r, in_front)` | Attempt to pick up nearest artifact in front cone |
 | `_handle_gamepad(state, r, joy, events, dt, in_front)` | Process gamepad stick, trigger, and button input |
 
@@ -368,6 +368,7 @@ Processes all Pygame events once per frame. Supports keyboard and gamepad simult
 
 **Gate behavior:**
 - Press `T` (keyboard) or `X` (gamepad) within `gate_range` of the gate to open it
+- Gate toggle acquires `_physics_lock` to safely clear the ramp and scatter artifacts without racing the physics thread
 - All ramp artifacts + overflow_held teleport to random spike-mark or loading-zone positions with small random velocity
 - Gate auto-closes after `gate_open_duration` seconds
 
@@ -408,8 +409,8 @@ Processes all Pygame events once per frame. Supports keyboard and gamepad simult
 2. Press **F6** (keyboard) to begin the timer
 3. **ESC** (keyboard) / **Y** (gamepad) pauses and resumes mid-match
 4. At **20 seconds remaining**, phase switches to **ENDGAME** (orange flashing text)
-5. At **0 seconds**, pattern scoring + base scoring are calculated
-6. Phase becomes **FINISHED** — robots freeze, overlay appears with colored parking result
+5. At **0 seconds**, pattern scoring + base scoring are calculated atomically (under lock), `timer_running` is set to `False`, and robot velocity is cleared
+6. Phase becomes **FINISHED** — robots freeze, all scoring stops, overlay appears with the exact same score shown on the HUD
 7. Press **F5** to reset, **F10** to quit
 8. Window is **resizable** — content scales to fit while preserving aspect ratio
 
@@ -421,21 +422,24 @@ Processes all Pygame events once per frame. Supports keyboard and gamepad simult
 Main Thread                          Physics Thread (daemon)
 ─────────────                        ──────────────────────
 input_handler.handle_input()
-update_timer()
 update_turret_angle()
                                      _physics_thread_target loop:
 acquire _physics_lock                   acquire _physics_lock
-  draw_field()                            update_park_status()
-  draw_artifacts()                        constrain_robot()
-  draw_robot()                            update_intake_heat()
-  draw_hud()                              update_artifact_physics()
-  draw_match_end()                        _update_flying_and_gate()
-release _physics_lock                  release _physics_lock
+  update_timer()                          update_park_status()
+  draw_field()                            constrain_robot()
+  draw_artifacts()                        update_intake_heat()
+  draw_robot()                            update_artifact_physics()
+  draw_hud()                              _update_flying_and_gate()
+  draw_match_end()                     release _physics_lock
+release _physics_lock
 smoothscale + display.flip()
 clock.tick_busy_loop(120)
 ```
 
 - `_physics_lock` protects all shared `GameState` mutations
+- `update_timer()` runs under the lock so `score_pattern()`/`score_base()` are atomic with respect to `_update_flying_and_gate()` — no race between scoring and the last flying artifacts arriving
+- When the match ends, `timer_running` is set to `False` and `robot.vx`/`robot.vy` are cleared, stopping all physics updates and preventing phantom artifact pushes
 - Turret angle update runs on main thread outside the lock (simple float reads/writes are GIL-atomic)
 - Reset acquires the lock to prevent physics thread from accessing state mid-reset
+- Gate toggle acquires the lock internally to safely clear the ramp without racing the physics thread
 - Physics thread runs at 60 Hz independently of the main thread's 120 Hz render rate

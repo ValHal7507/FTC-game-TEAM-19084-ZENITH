@@ -47,11 +47,13 @@ def main():
                 # Re-sync: the physics thread will pick up the fresh state
                 # on its next iteration.
 
-            update_timer(state, dt)
             update_turret_angle(state)
 
             # Render under lock so physics thread doesn't mutate state mid-draw
+            # update_timer also runs under lock so score_pattern/score_base
+            # are atomic with respect to flying artifact scoring.
             with _physics_lock:
+                update_timer(state, dt)
                 render_surf.fill(BLACK)
                 draw_field(render_surf, state)
                 draw_artifacts(render_surf, state)

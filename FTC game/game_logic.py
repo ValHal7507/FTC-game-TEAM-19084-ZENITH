@@ -55,6 +55,9 @@ def update_timer(state, dt):
         score_base(state)
         state.phase = "FINISHED"
         state.timer = 0
+        state.timer_running = False
+        state.robot.vx = 0.0
+        state.robot.vy = 0.0
 
 
 def score_pattern(state):
