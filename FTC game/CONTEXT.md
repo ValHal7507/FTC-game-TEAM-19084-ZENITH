@@ -89,6 +89,7 @@ No external dependencies beyond Python stdlib and `pygame`.
 | `goal_w` / `goal_h` | 130 | Goal rectangle size |
 | `loading_zone_size` | 100 | Loading zone square size |
 | `base_size` | 80 | Base zone square size |
+| `shooting_zone_size` | 220 | Shooting zone triangle hypotenuse width (px) |
 | `spike_cols` | 2 | Spike mark columns |
 | `spike_rows` | 3 | Spike mark rows |
 | `ramp_h` | 14 | Ramp rectangle height (px) |
@@ -118,6 +119,10 @@ No external dependencies beyond Python stdlib and `pygame`.
 ---
 
 ### `game_state.py` — Data Classes
+
+**Module-level helpers:**
+- `_sign(p1, p2, p3)` — Signed area of triangle (p1, p2, p3). Used for point-in-triangle test.
+- `_point_in_triangle(pt, v1, v2, v3)` — Return True if pt is inside triangle defined by v1, v2, v3 (sign-of-cross-product method).
 
 #### `Artifact`
 - `x, y` — position on canvas
@@ -187,7 +192,8 @@ No external dependencies beyond Python stdlib and `pygame`.
   - **3 loading-zone** artifacts (PGP, no respawn)
   - **6 alliance-area** artifacts (4P+2G random)
 - **`goal_rect()`**, `ramp_rect()`, `depot_rect()`, `gate_rect()`, `loading_rect()`, `base_rect()` — computed `pygame.Rect` helpers
-- **`in_launch_zone(x, y)`** — checks if point is within the triangular launch zone at top of field **OR** within the base/parking zone rectangle; both zones count for scoring
+- **`shooting_zone_triangle()`** — returns the three vertices `(top, bl, br)` of the right-angle isosceles shooting zone triangle (bottom-center of field, hypotenuse at bottom)
+- **`in_launch_zone(x, y)`** — checks if point is within the triangular launch zone at top of field **OR** within the base/parking zone rectangle **OR** within the shooting zone triangle; all three zones count for scoring
 - **`nearest_artifact(x, y, radius)`** — finds closest pickup-able artifact
 - **`get_ramp_scatter_positions(state)`** (module-level) — returns 21 `(x, y)` positions (18 spike-mark + 3 loading zone) for gate-release teleport
 
@@ -215,7 +221,7 @@ No external dependencies beyond Python stdlib and `pygame`.
 
 Three independent caches improve rendering performance:
 
-1. **Field surface cache** — Static field elements (background, grid, loading zone, goal outline, ramp outline, gate outline, depot, spike marks, launch zone triangle) rendered once to `_field_surface`. Dynamic elements (park status pulse/glow, ramp slot fill, gate open/closed state, drive mode badge) are drawn on top each frame. Cache is rebuilt automatically on first draw. Invalidated via `_invalidate_field_cache()`. Park-specific cache state tracked in `_field_cache_park`.
+1. **Field surface cache** — Static field elements (background, grid, loading zone, goal outline, ramp outline, gate outline, depot, spike marks, launch zone triangle, shooting zone triangle) rendered once to `_field_surface`. Dynamic elements (park status pulse/glow, ramp slot fill, gate open/closed state, drive mode badge) are drawn on top each frame. Cache is rebuilt automatically on first draw. Invalidated via `_invalidate_field_cache()`. Park-specific cache state tracked in `_field_cache_park`.
 
 2. **Robot render cache** — The full 96×96 SRCALPHA robot surface is cached in a dict keyed on `(angle_deg, turret_deg, held_colors)` via `_robot_cache_key(r)`. Turret angle is quantized to 2° increments (sub-pixel difference at the turret's small size) to maintain good cache hit rate while tracking the goal. FIFO eviction via `collections.deque` caps the cache at 360 entries to prevent unbounded memory growth. Surface built by `_build_robot_surface(r)`.
 
@@ -357,6 +363,7 @@ Processes all Pygame events once per frame. Supports keyboard and gamepad simult
 | Right trigger (axis 5) | Hold to intake (continuously picks up artifacts in front cone while held; blocked when overheated) |
 | X (2) | Toggle gate open (must be within gate_range of gate) |
 | Y (3) | Pause / Resume toggle |
+| B (1) | Toggle drive mode (robot ↔ field) |
 | Back / Select (6) | Reset game |
 
 **Drive modes:**
@@ -364,6 +371,7 @@ Processes all Pygame events once per frame. Supports keyboard and gamepad simult
 - `"field"`: W = world-up, S = world-down, A/D = world-left/right, Left/Right = rotate
 - Gamepad: left stick moves in world axes in field mode, relative to robot heading in robot mode
 - Badge at field top-left shows current mode
+- Toggle with `R` (keyboard) or `B` (gamepad)
 - **Default on startup: `"field"`**
 
 **Gate behavior:**
@@ -376,8 +384,8 @@ Processes all Pygame events once per frame. Supports keyboard and gamepad simult
 - `Q`/left trigger works with any number of held artifacts
 - Launches all held as individual projectiles with random ±6px offset for visual separation
 - Each projectile independently reaches the goal and enters the ramp visually
-- Points (classified + overflow/depot) only count if robot was in launch zone (top triangle **OR** base/parking zone)
-- Outside both zones = artifact fills ramp visually but awards absolutely 0 points
+- Points (classified + overflow/depot) only count if robot was in launch zone (top triangle **OR** base/parking zone **OR** shooting zone triangle)
+- Outside all three zones = artifact fills ramp visually but awards absolutely 0 points
 
 **Intake overheating behavior:**
 - `E` (keyboard) toggles intake; **blocked when `intake_overheated` is True**

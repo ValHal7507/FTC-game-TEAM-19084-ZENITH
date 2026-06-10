@@ -75,6 +75,7 @@ CONFIG = {
     "goal_h": 130,
     "loading_zone_size": 100,
     "base_size": 80,
+    "shooting_zone_size": 220,
     "spike_cols": 2,
     "spike_rows": 3,
     "ramp_h": 14,

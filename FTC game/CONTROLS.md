@@ -79,7 +79,7 @@ Modul curent este afisat intr-un badge in coltul stanga sus al terenului.
 | **Trigger stanga (LT)** | Lanseaza TOATE artefactele detinute spre gol (oricate ar avea) |
 | **Trigger dreapta (RT)** | Tine apasat pentru intake (ridicare continua cat timp e tinut; blocat cand e supraincalzit) |
 
-> La trigger-ul stanga exista un cooldown de 0.25 secunde intre lansari pentru a preveni lansari accidentale duble.
+> La trigger-ul stanga se foloseste edge detection: lansarea se declanseaza doar la apasare, nu si la mentinere.
 
 ### Butoane
 
@@ -87,6 +87,7 @@ Modul curent este afisat intr-un badge in coltul stanga sus al terenului.
 |---|---|
 | `X` (butonul 2) | Deschide / inchide poarta ( trebuie sa fii in raza de actiune ) |
 | `Y` (butonul 3) | Pauza / Resume |
+| `B` (butonul 1) | Comuteaza modul de deplasare (Robot / Field) |
 | `Back / Select` (butonul 6) | Reseteaza jocul |
 
 ---
@@ -112,7 +113,7 @@ Scopul este sa colectezi artefacte de pe teren, sa le clasifici pe rampa si sa l
 
 ### Lansarea spre gol
 
-- Apropie robotul de **zona de lansare** (triunghiul de sus din teren)
+- Apropie robotul de **zona de lansare** (triunghiul de sus din teren, zona de shooting din centru-jos, sau zona de baza)
 - Apasa `Q` (tastatura) sau `LT` (controler) pentru a lansa toate artefactele detinute
 - Artefactele zboara spre gol si intra in rampa vizual
 - **Puncte:** artefactele lansate din zona de lansare primesc puncte; cele lansate din alta zona nu primesc nimic (doar umplu rampa vizual)
@@ -135,7 +136,7 @@ Scopul este sa colectezi artefacte de pe teren, sa le clasifici pe rampa si sa l
 
 ### Parcare
 
-- La sfarsitul meciului, parca robotul in **zona de baza** (patratul din coltul terenului)
+- La sfarsitul meciului, parca robotul in **zona de baza** (patratul din coltul stanga-jos al terenului, la 100px de margini)
 - Robotul complet inauntru → +10 puncte
 - Robotul partial in zona → +5 puncte
 - Robotul in afara → 0 puncte
@@ -163,5 +164,7 @@ Scopul este sa colectezi artefacte de pe teren, sa le clasifici pe rampa si sa l
 | Slot de rampa care corespunde motivului | +2 | Evaluat la sfarsitul meciului |
 | Parcare completa in baza | +10 | Robotul complet in interiorul zonei de baza |
 | Parcare partiala in baza | +5 | Robotul suprapus partial cu zona de baza |
+
+**Zona de lansare** include: triunghiul de sus, zona de baza (coltul stanga-jos), si triunghiul de shooting (centru-jos).
 
 **Motivul** (culorile care trebuie aliniate pe rampa) este generat aleator la fiecare reset: una dintre variantele `GPP`, `PGP` sau `PPG`.

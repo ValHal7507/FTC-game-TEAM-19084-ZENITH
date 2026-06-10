@@ -12,6 +12,21 @@ from config import CONFIG, FX, FY, FS, dist
 from game_logic import rebuild_obstacle_cache
 
 
+def _sign(p1, p2, p3):
+    """Signed area of triangle (p1, p2, p3). Used for point-in-triangle test."""
+    return (p1[0] - p3[0]) * (p2[1] - p3[1]) - (p2[0] - p3[0]) * (p1[1] - p3[1])
+
+
+def _point_in_triangle(pt, v1, v2, v3):
+    """Return True if pt is inside triangle defined by v1, v2, v3."""
+    d1 = _sign(pt, v1, v2)
+    d2 = _sign(pt, v2, v3)
+    d3 = _sign(pt, v3, v1)
+    has_neg = (d1 < 0) or (d2 < 0) or (d3 < 0)
+    has_pos = (d1 > 0) or (d2 > 0) or (d3 > 0)
+    return not (has_neg and has_pos)
+
+
 @dataclass
 class Artifact:
     """A single field artifact (purple or green)."""
@@ -201,12 +216,23 @@ class GameState:
         return pygame.Rect(FX, FY, CONFIG["loading_zone_size"], CONFIG["loading_zone_size"])
 
     def base_rect(self):
-        """Return the base/parking zone rectangle."""
-        return pygame.Rect(FX + FS // 2 - CONFIG["base_size"] // 2,
-                           FY + FS - CONFIG["base_size"], CONFIG["base_size"], CONFIG["base_size"])
+        """Return the base/parking zone rectangle (bottom-left, 100px from margins)."""
+        return pygame.Rect(FX + 100, FY + FS - 100 - CONFIG["base_size"],
+                           CONFIG["base_size"], CONFIG["base_size"])
+
+    def shooting_zone_triangle(self):
+        """Return the three vertices of the shooting zone triangle (right-angle isosceles, hypotenuse at bottom)."""
+        hyp = CONFIG["shooting_zone_size"]
+        height = hyp / 2
+        cx = FX + FS // 2
+        cy = FY + FS - 5 - height / 3
+        top = (cx, cy - 2 * height / 3)
+        bl = (cx - hyp / 2, cy + height / 3)
+        br = (cx + hyp / 2, cy + height / 3)
+        return (top, bl, br)
 
     def in_launch_zone(self, x, y):
-        """Check if a point is within the triangular launch zone or base/parking zone."""
+        """Check if a point is within the triangular launch zone, base/parking zone, or shooting zone."""
         if self.base_rect().collidepoint(x, y):
             return True
         fx, fy = x - FX, y - FY
@@ -215,6 +241,9 @@ class GameState:
             right = 620 - (620 - 460) * (fy / 300)
             if left <= fx <= right:
                 return True
+        top, bl, br = self.shooting_zone_triangle()
+        if _point_in_triangle((x, y), top, bl, br):
+            return True
         return False
 
     def nearest_artifact(self, x, y, radius):

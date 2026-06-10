@@ -90,11 +90,29 @@ def _build_field_surface():
     lbl = f_tiny.render("LOAD ZONE", True, SOFT_WHITE)
     surf.blit(lbl, (lr.centerx - lbl.get_width() // 2, lr.centery - lbl.get_height() // 2))
 
-    br = pygame.Rect(FX + FS // 2 - CONFIG["base_size"] // 2,
-                     FY + FS - CONFIG["base_size"], CONFIG["base_size"], CONFIG["base_size"])
+    br = pygame.Rect(FX + 100, FY + FS - 100 - CONFIG["base_size"],
+                     CONFIG["base_size"], CONFIG["base_size"])
     pygame.draw.rect(surf, ROBOT_PURPLE, br, 2, border_radius=3)
     lbl = f_small.render("BASE", True, ROBOT_PURPLE)
     surf.blit(lbl, (br.centerx - lbl.get_width() // 2, br.centery - lbl.get_height() // 2))
+
+    # Shooting zone triangle (right-angle isosceles, hypotenuse at bottom)
+    _hyp = CONFIG["shooting_zone_size"]
+    _ht = _hyp / 2
+    _cx = FX + FS // 2
+    _cy = FY + FS - 5 - _ht / 3
+    shoot_pts = [
+        (_cx, _cy - 2 * _ht / 3),
+        (_cx - _hyp / 2, _cy + _ht / 3),
+        (_cx + _hyp / 2, _cy + _ht / 3),
+    ]
+    shoot_surface = pygame.Surface((FS, FS), pygame.SRCALPHA)
+    pygame.draw.polygon(shoot_surface, (255, 255, 255, 20),
+                        [(p[0] - FX, p[1] - FY) for p in shoot_pts])
+    surf.blit(shoot_surface, (FX, FY))
+    pygame.draw.polygon(surf, SOFT_WHITE, shoot_pts, 1)
+    shoot_lbl = f_tiny.render("SHOOT", True, SOFT_WHITE)
+    surf.blit(shoot_lbl, (_cx - shoot_lbl.get_width() // 2, int(_cy + _ht / 3) - shoot_lbl.get_height() - 4))
 
     gr = pygame.Rect(FX + FS // 2 - CONFIG["goal_w"] // 2, FY + 12,
                      CONFIG["goal_w"], CONFIG["goal_h"])

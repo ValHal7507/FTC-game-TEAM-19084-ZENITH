@@ -69,6 +69,8 @@ def handle_input(state, dt):
                 elif e.button == 3:  # Y — Pause / Resume toggle
                     if state.phase != "FINISHED":
                         state.timer_running = not state.timer_running
+                elif e.button == 1:  # B — Toggle drive mode
+                    state.robot.drive_mode = "robot" if state.robot.drive_mode == "field" else "field"
 
     if reset_requested:
         return True
