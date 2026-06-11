@@ -10,6 +10,7 @@ from config import (
     CONFIG, FX, FY, FS, HX, HW, W, H,
     BLACK, WHITE, GRAY, DARK_GRAY, BG_DARK, CHARCOAL, SOFT_WHITE,
     ROBOT_PURPLE, ROBOT_DARK, GLOW_PURPLE,
+    ZENITH_PURPLE, ZENITH_ACCENT, ZENITH_DARK, ZENITH_LABEL, ZENITH_TAG,
     GOAL_GOLD, GOAL_DARK, RAMP_DARK, SLOT_EMPTY, SLOT_BORDER,
     GATE_COLOR, GATE_OPEN_COLOR,
     PURPLE, GREEN, GOLD, ORANGE, RED_ACCENT, PARK_GREEN,
@@ -182,9 +183,10 @@ def draw_field(screen, state):
 
     # --- Drive mode badge (always dynamic) ---
     mode = state.robot.drive_mode.upper()
-    mc = GOLD if mode == "FIELD" else SOFT_WHITE
-    lbl = f_tiny.render(f"DRIVE: {mode}", True, mc)
-    pygame.draw.rect(screen, BG_DARK, (FX + 4, FY + 4, lbl.get_width() + 8, lbl.get_height() + 4), border_radius=3)
+    lbl = f_tiny.render(f"DRIVE: {mode}", True, ZENITH_ACCENT)
+    badge_rect = pygame.Rect(FX + 4, FY + 4, lbl.get_width() + 8, lbl.get_height() + 4)
+    pygame.draw.rect(screen, ZENITH_DARK, badge_rect, border_radius=3)
+    pygame.draw.rect(screen, ZENITH_PURPLE, badge_rect, 1, border_radius=3)
     screen.blit(lbl, (FX + 8, FY + 6))
 
     # --- Base zone park status ---
@@ -378,10 +380,10 @@ def _build_robot_surface(r):
     # Layer 11: Team label
     f_zenith = _make_font("Segoe UI", 6)
     f_zenith.set_bold(True)
-    lbl = f_zenith.render("ZENITH", True, (220, 220, 255))
+    lbl = f_zenith.render("ZENITH", True, ZENITH_ACCENT)
     surf.blit(lbl, (half - lbl.get_width() // 2, half + 10))
     f_num = _make_font("Segoe UI", 5)
-    lbl2 = f_num.render("19084", True, (120, 60, 200))
+    lbl2 = f_num.render("19084", True, ZENITH_ACCENT)
     surf.blit(lbl2, (half - lbl2.get_width() // 2, half + 16))
 
     # Layer 12: Forward direction triangle
@@ -430,11 +432,28 @@ def draw_robot(screen, state):
 # ============================================================
 def draw_hud(screen, state):
     """Draw the heads-up display panel."""
-    panel = pygame.Rect(HX, FY - 5, HW, FS + 10)
+    HUD_BRAND_H = 48
+
+    panel = pygame.Rect(HX, FY - 5, HW, H - FY + 5)
     _round_rect(screen, panel, BG_DARK, 6)
     pygame.draw.rect(screen, GRAY, panel, 2, border_radius=6)
 
-    y = FY + 20
+    # ── Team ZENITH branding header ──────────────────────────────────────────
+    strip_rect = pygame.Rect(HX, FY, HW, 30)
+    pygame.draw.rect(screen, ZENITH_DARK, strip_rect)
+    pygame.draw.line(screen, ZENITH_PURPLE, (HX, FY + 30), (HX + HW, FY + 30), 1)
+
+    label_surf = f_small.render(ZENITH_LABEL, True, ZENITH_ACCENT)
+    label_rect = label_surf.get_rect(center=(HX + HW // 2, FY + 15))
+    screen.blit(label_surf, label_rect)
+
+    tag_surf = f_micro.render(ZENITH_TAG, True, ZENITH_ACCENT)
+    tag_surf.set_alpha(150)
+    tag_rect = tag_surf.get_rect(center=(HX + HW // 2, FY + 30 + 9))
+    screen.blit(tag_surf, tag_rect)
+    # ──────────────────────────────────────────────────────────────────────────
+
+    y = FY + HUD_BRAND_H + 20
 
     pc = WHITE
     pt = "TELEOP"
@@ -625,10 +644,30 @@ def _build_end_overlay(state):
     surf.fill((0, 0, 0, 200))
 
     cx, cy = W // 2, H // 2 - 30
+    overlay_cx = cx
 
     lbl = f_huge.render("MATCH OVER", True, GOLD)
     surf.blit(lbl, (cx - lbl.get_width() // 2, cy - 50))
     cy += 20
+
+    # ── Team ZENITH branding between heading and score ───────────────────────
+    brand_offset = f_small.get_height() + f_micro.get_height() + 20
+
+    brand_surf = f_small.render(ZENITH_LABEL, True, ZENITH_PURPLE)
+    brand_rect = brand_surf.get_rect(center=(overlay_cx, cy + 12))
+    surf.blit(brand_surf, brand_rect)
+
+    tag_surf = f_micro.render(ZENITH_TAG, True, ZENITH_ACCENT)
+    tag_surf.set_alpha(160)
+    tag_rect = tag_surf.get_rect(center=(overlay_cx, brand_rect.bottom + 8))
+    surf.blit(tag_surf, tag_rect)
+
+    pygame.draw.line(surf, ZENITH_PURPLE,
+        (overlay_cx - 90, tag_rect.bottom + 6),
+        (overlay_cx + 90, tag_rect.bottom + 6), 1)
+
+    cy += brand_offset
+    # ─────────────────────────────────────────────────────────────────────────
 
     t = state.team
     lbl = f_hud.render(f"FINAL SCORE: {t.total_score()}", True, WHITE)
@@ -691,7 +730,7 @@ def draw_pause_menu(screen, state):
     overlay.fill(PAUSE_OVERLAY)
     screen.blit(overlay, (0, 0))
 
-    panel_w, panel_h = 320, 370
+    panel_w, panel_h = 320, 390
     panel_x = (W - panel_w) // 2
     panel_y = (H - panel_h) // 2
 
@@ -731,7 +770,14 @@ def draw_pause_menu(screen, state):
 
     hint = f_tiny.render("Up/Down: navigate  Enter: select", True, GRAY)
     screen.blit(hint, (panel_x + panel_w // 2 - hint.get_width() // 2,
-                       panel_y + panel_h - 30))
+                       panel_y + panel_h - 40))
+
+    # ── Team ZENITH watermark ────────────────────────────────────────────────
+    wm_surf = f_micro.render(ZENITH_LABEL, True, ZENITH_PURPLE)
+    wm_surf.set_alpha(80)
+    wm_rect = wm_surf.get_rect(center=(panel_x + panel_w // 2, panel_y + panel_h - 14))
+    screen.blit(wm_surf, wm_rect)
+    # ─────────────────────────────────────────────────────────────────────────
 
 
 # ============================================================

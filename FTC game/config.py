@@ -21,9 +21,16 @@ CHARCOAL = (50, 50, 56)
 LIGHT_GRAY = (190, 190, 200)
 SOFT_WHITE = (220, 220, 230)
 
-ROBOT_PURPLE = (175, 60, 255)
+ROBOT_PURPLE = (69, 23, 163)     # Team ZENITH official brand color
 ROBOT_DARK = (100, 20, 160)
-GLOW_PURPLE = (200, 120, 255, 60)
+GLOW_PURPLE = (160, 100, 255)   # Brighter glow variant of team purple
+
+# ── Team ZENITH 19084 brand colors ──────────────────────────────────────────
+ZENITH_PURPLE  = (69,  23, 163)   # #4517a3 — official team primary color
+ZENITH_ACCENT  = (180, 140, 255)  # soft lavender — light text on dark bg
+ZENITH_DARK    = (25,   8,  60)   # near-black deep purple — header bg
+ZENITH_LABEL   = "ZENITH  19084"  # full display string
+ZENITH_TAG     = "Visions above ground"  # team tagline
 
 GOAL_GOLD = (210, 170, 60)
 GOAL_DARK = (140, 110, 30)
@@ -51,11 +58,11 @@ HEAT_RED = (220, 50, 40)
 
 PAUSE_OVERLAY = (0, 0, 0, 180)
 MENU_BG = (30, 30, 36)
-MENU_BORDER = (210, 170, 60)
-MENU_HIGHLIGHT_BG = (60, 55, 45)
-MENU_HIGHLIGHT_BORDER = (255, 210, 40)
+MENU_BORDER = (69, 23, 163)         # ZENITH_PURPLE
+MENU_HIGHLIGHT_BG = (40, 18, 95)    # dark purple for selected button
+MENU_HIGHLIGHT_BORDER = (180, 140, 255)  # ZENITH_ACCENT lavender
 MENU_TEXT = (220, 220, 230)
-MENU_TITLE = (255, 210, 40)
+MENU_TITLE = (180, 140, 255)        # ZENITH_ACCENT lavender
 OPTIONS_REBIND = (255, 100, 60)
 OPTIONS_BIND = (100, 200, 140)
 
@@ -106,7 +113,7 @@ CONFIG = {
 
 # Derived layout constants
 VW = CONFIG["field_size_px"] + CONFIG["field_margin_left"] + CONFIG["hud_margin"] + CONFIG["hud_width"]
-VH = CONFIG["field_size_px"] + CONFIG["field_margin_top"] + 5
+VH = CONFIG["field_size_px"] + CONFIG["field_margin_top"] + 5 + 48
 FX = CONFIG["field_margin_left"]
 FY = CONFIG["field_margin_top"]
 FS = CONFIG["field_size_px"]

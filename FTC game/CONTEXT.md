@@ -28,7 +28,7 @@ No external dependencies beyond Python stdlib and `pygame`.
 ### `main.py` — Entry Point
 
 - Initializes Pygame, creates a **resizable window** (`pygame.RESIZABLE`) titled `"FTC DECODE — Robot simulator by TEAM ZENITH 19084"`
-- Creates a fixed-size **virtual canvas** (`1050 × 730`) that all drawing targets
+- Creates a fixed-size **virtual canvas** (`1050 × 778`) that all drawing targets
 - Each frame: input → turret update → (under lock) timer → render → smoothscale to window (aspect-ratio-preserving with black letterbox bars)
 - Uses `clock.tick_busy_loop(fps)` for precise frame pacing
 - Calls `init_drawing()` after `pygame.init()` to initialize fonts (must happen after pygame init)
@@ -47,7 +47,9 @@ No external dependencies beyond Python stdlib and `pygame`.
 | `BLACK`, `WHITE`, `GRAY` | Basic colors used throughout rendering |
 | `CHARCOAL`, `DARK_GRAY`, `BG_DARK` | Field background, grid lines, HUD panel |
 | `LIGHT_GRAY`, `SOFT_WHITE` | Light text and highlights |
-| `ROBOT_PURPLE`, `ROBOT_DARK`, `GLOW_PURPLE` | Robot fill, dark shade, and selection glow |
+| `ROBOT_PURPLE`, `ROBOT_DARK`, `GLOW_PURPLE` | Robot fill, dark shade, and selection glow (ZENITH brand purple) |
+| `ZENITH_PURPLE`, `ZENITH_ACCENT`, `ZENITH_DARK` | Team ZENITH brand colors: primary purple, lavender accent, deep dark |
+| `ZENITH_LABEL`, `ZENITH_TAG` | Team display string `"ZENITH  19084"` and tagline `"Visions above ground"` |
 | `GOAL_GOLD`, `GOAL_DARK` | Goal outline and fill |
 | `RAMP_DARK` | Ramp background |
 | `GATE_COLOR`, `GATE_OPEN_COLOR` | Gate closed/open state colors |
@@ -64,11 +66,11 @@ No external dependencies beyond Python stdlib and `pygame`.
 | `HEAT_RED` | Intake heat bar: critical / cooldown text |
 | `PAUSE_OVERLAY` | Semi-transparent black overlay for pause menu background |
 | `MENU_BG` | Pause menu panel background |
-| `MENU_BORDER` | Pause menu panel border |
-| `MENU_HIGHLIGHT_BG` | Pause menu highlighted button background |
-| `MENU_HIGHLIGHT_BORDER` | Pause menu highlighted button border |
+| `MENU_BORDER` | Pause menu panel border (ZENITH purple) |
+| `MENU_HIGHLIGHT_BG` | Pause menu highlighted button background (dark purple) |
+| `MENU_HIGHLIGHT_BORDER` | Pause menu highlighted button border (ZENITH_ACCENT lavender) |
 | `MENU_TEXT` | Pause menu button text |
-| `MENU_TITLE` | Pause menu "PAUSED" title text |
+| `MENU_TITLE` | Pause menu "PAUSED" title text (ZENITH_ACCENT lavender) |
 | `OPTIONS_REBIND` | Options screen rebinding pulse color (red-orange) |
 | `OPTIONS_BIND` | Options screen selected binding color (green) |
 
@@ -117,7 +119,7 @@ No external dependencies beyond Python stdlib and `pygame`.
 **Derived layout constants** (computed from CONFIG):
 | Constant | Value | Meaning |
 |---|---|---|
-| `VW`, `VH` | 1050, 730 | Virtual canvas dimensions |
+| `VW`, `VH` | 1050, 778 | Virtual canvas dimensions |
 | `FX`, `FY` | 5, 5 | Field top-left corner on canvas |
 | `FS` | 720 | Field size (alias for `field_size_px`) |
 | `HX`, `HW` | 730, 320 | HUD panel left edge and width |
@@ -258,12 +260,12 @@ Three independent caches improve rendering performance:
 
 | Function | Draws |
 |---|---|
-| `draw_field()` | Static field elements from cache + dynamic per-frame: drive mode badge, base zone park status (fill + pulse/glow), ramp slot fill, gate open/closed state |
+| `draw_field()` | Static field elements from cache + dynamic per-frame: drive mode badge (ZENITH purple theme), base zone park status (fill + pulse/glow), ramp slot fill, gate open/closed state |
 | `draw_artifacts()` | Field artifacts (with glow and motion ghost), flying artifacts (each as individual colored circle with alpha-blended fading trail capped at `MAX_TRAIL`) |
-| `draw_robot()` | **ZENITH (FTC 19084) layered render with cache**: 96×96 SRCALPHA surface, drawn in 12 layers then rotated and blitted. Layers: drop shadow, 4 mecanum wheels with blue rollers, silver open truss frame with X-braces, purple 3D-printed infill panels, blue LED glow, green REV hub status LED, black corrugated intake hose arc, front intake rollers, turret base ring, **goal-tracking turret** (rotated independently of body via `turret_angle`, always points at goal), team labels, gold forward triangle. Held artifacts are baked onto the surface before rotation so they stay glued to the robot. Cache key includes turret angle so turret tracks goal even during pure translation. |
-| `draw_hud()` | Dark panel on right side: phase label, STOPPED/PAUSED badge, countdown timer (muted gray when paused), motif circles, launch zone indicator (✓/✗), intake status (ON/OFF/COOLDOWN) with color-interpolated heat bar (green→yellow→orange→red) and cooldown timer, score breakdown, 9-slot ramp display, gate state, parking status 3-segment bar with status label |
-| `draw_match_end()` | Cached semi-transparent overlay with "MATCH OVER", final score, breakdown with colored parking result, F5/F10 prompt |
-| `draw_pause_menu()` | Semi-transparent overlay with centered panel containing 5 selectable buttons: Resume, Restart Game, Detect Gamepads, Options, Exit. Highlighted button shown with gold border. Navigation hint at bottom. Rendered when `timer_running` is False and phase is not FINISHED. |
+| `draw_robot()` | **ZENITH (FTC 19084) layered render with cache**: 96×96 SRCALPHA surface, drawn in 12 layers then rotated and blitted. Layers: drop shadow, 4 mecanum wheels with blue rollers, silver open truss frame with X-braces, purple 3D-printed infill panels, blue LED glow, green REV hub status LED, black corrugated intake hose arc, front intake rollers, turret base ring, **goal-tracking turret** (rotated independently of body via `turret_angle`, always points at goal), team labels (ZENITH_ACCENT lavender), gold forward triangle. Held artifacts are baked onto the surface before rotation so they stay glued to the robot. Cache key includes turret angle so turret tracks goal even during pure translation. |
+| `draw_hud()` | Dark panel on right side: team branding header ("ZENITH 19084" + tagline), phase label, STOPPED/PAUSED badge, countdown timer (muted gray when paused), motif circles, launch zone indicator (✓/✗), intake status (ON/OFF/COOLDOWN) with color-interpolated heat bar (green→yellow→orange→red) and cooldown timer, score breakdown, 9-slot ramp display, gate state, parking status 3-segment bar with status label |
+| `draw_match_end()` | Cached semi-transparent overlay with "MATCH OVER", team branding ("ZENITH 19084" + tagline), final score, breakdown with colored parking result, F5/F10 prompt |
+| `draw_pause_menu()` | Semi-transparent overlay with centered panel containing 5 selectable buttons: Resume, Restart Game, Detect Gamepads, Options, Exit. Highlighted button shown with lavender border (ZENITH_ACCENT). Navigation hint at bottom. Subtle ZENITH watermark at panel bottom. Rendered when `timer_running` is False and phase is not FINISHED. |
 | `draw_options_screen()` | Full-screen overlay for keybind customization. Two tabs (KEYBOARD / GAMEPAD). Each tab lists all bindable actions with current binding and highlight for selected row. Supports rebinding pulse animation, duplicate binding warnings, locked binding indicators, and Reset to Default row. |
 
 ---
