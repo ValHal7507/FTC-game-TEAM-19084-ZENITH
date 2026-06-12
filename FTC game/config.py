@@ -57,6 +57,11 @@ HEAT_ORANGE = (240, 140, 30)
 HEAT_RED = (220, 50, 40)
 
 # Alliance accent colors (1v1 mode only)
+ALLIANCE_BLUE = (60, 130, 220)
+ALLIANCE_BLUE_DIM = (30, 70, 120)
+ALLIANCE_RED = (220, 50, 50)
+ALLIANCE_RED_DIM = (120, 30, 30)
+
 PAUSE_OVERLAY = (0, 0, 0, 180)
 MENU_BG = (30, 30, 36)
 MENU_BORDER = (69, 23, 163)         # ZENITH_PURPLE
@@ -72,7 +77,7 @@ OPTIONS_BIND = (100, 200, 140)
 # ============================================================
 CONFIG = {
     "field_size_px": 720,
-    "fps": 120,
+    "fps": 144,
     "teleop_time": 120,
     "endgame_time": 20,
     "robot_speed": 280,
@@ -83,7 +88,7 @@ CONFIG = {
     "rotation_speed": 300,
     "gate_range": 45,
     "gate_open_duration": 2.0,
-    "spike_mark_count": 6,
+    "spike_mark_count": 3,
     "ramp_slots": 9,
     "max_hold": 3,
     "respawn_delay": 5.0,
