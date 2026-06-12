@@ -19,6 +19,7 @@ from config import (
     MENU_HIGHLIGHT_BORDER, MENU_TEXT, MENU_TITLE,
     OPTIONS_REBIND, OPTIONS_BIND,
     GAMEPAD_NAMES, LOCKED_KEYBINDS,
+    ALLIANCE_BLUE, ALLIANCE_BLUE_DIM, ALLIANCE_RED, ALLIANCE_RED_DIM,
     lerp,
 )
 
@@ -95,7 +96,7 @@ def _build_field_surface():
     lbl = f_tiny.render("LOAD ZONE", True, SOFT_WHITE)
     surf.blit(lbl, (lr.centerx - lbl.get_width() // 2, lr.centery - lbl.get_height() // 2))
 
-    br = pygame.Rect(FX + 100, FY + FS - 100 - CONFIG["base_size"],
+    br = pygame.Rect(FX + 10, FY + FS // 2 - CONFIG["base_size"] // 2,
                      CONFIG["base_size"], CONFIG["base_size"])
     pygame.draw.rect(surf, ROBOT_PURPLE, br, 2, border_radius=3)
     lbl = f_small.render("BASE", True, ROBOT_PURPLE)
@@ -119,7 +120,7 @@ def _build_field_surface():
     shoot_lbl = f_tiny.render("SHOOT", True, SOFT_WHITE)
     surf.blit(shoot_lbl, (_cx - shoot_lbl.get_width() // 2, int(_cy + _ht / 3) - shoot_lbl.get_height() - 4))
 
-    gr = pygame.Rect(FX + FS // 2 - CONFIG["goal_w"] // 2, FY + 12,
+    gr = pygame.Rect(FX + FS // 2 - CONFIG["goal_w"] // 2, FY,
                      CONFIG["goal_w"], CONFIG["goal_h"])
     pygame.draw.rect(surf, GOAL_DARK, gr, border_radius=4)
     pygame.draw.rect(surf, GOAL_GOLD, gr, 2, border_radius=4)
@@ -142,7 +143,7 @@ def _build_field_surface():
     lbl = f_tiny.render("DEPOT", True, GRAY)
     surf.blit(lbl, (dr.centerx - lbl.get_width() // 2, dr.centery - lbl.get_height() // 2))
 
-    cols = [FX + 300, FX + 400]
+    cols = [FX + FS // 2 - 50]
     rows = [FY + 280, FY + 360, FY + 440]
     labels = ["NEAR (GPP)", "MID (PGP)", "FAR (PPG)"]
     for ri, ry in enumerate(rows):
@@ -278,7 +279,7 @@ def _robot_cache_key(r):
     angle_deg = int(-math.degrees(r.angle)) % 360
     turret_deg = int(math.degrees(r.turret_angle) / 2) * 2 % 360
     held = tuple(held.color for held in r.holding)
-    return (angle_deg, turret_deg, held)
+    return (angle_deg, turret_deg, held, r.alliance)
 
 
 def _build_robot_surface(r):
@@ -286,6 +287,17 @@ def _build_robot_surface(r):
     cs = 96
     half = cs // 2
     surf = pygame.Surface((cs, cs), pygame.SRCALPHA)
+
+    # Resolve alliance colors
+    if r.alliance == "blue":
+        led_color = ALLIANCE_BLUE
+        roller_color = ALLIANCE_BLUE_DIM
+    elif r.alliance == "red":
+        led_color = ALLIANCE_RED
+        roller_color = ALLIANCE_RED_DIM
+    else:
+        led_color = (0, 200, 100)
+        roller_color = (80, 120, 200)
 
     def l2s(lx, ly):
         return (half + lx, half + ly)
@@ -303,10 +315,10 @@ def _build_robot_surface(r):
         lx, ly = half + wx, half + wy
         pygame.draw.ellipse(surf, (40, 40, 50), (lx - 5, ly - 10, 11, 20))
         for off in range(-6, 7, 3):
-            pygame.draw.line(surf, (30, 100, 220),
+            pygame.draw.line(surf, roller_color,
                              (lx - 5 + off, ly - 10),
                              (lx + 5 - off, ly + 10), 2)
-        pygame.draw.ellipse(surf, (30, 100, 220), (lx - 5, ly - 10, 11, 20), 1)
+        pygame.draw.ellipse(surf, roller_color, (lx - 5, ly - 10, 11, 20), 1)
 
     # Layer 3: Open truss frame
     fx, fy = -27, -25
@@ -337,10 +349,11 @@ def _build_robot_surface(r):
     # Layer 6: Green status LED
     gx, gy = half - 18, half + 8
     glow = pygame.Surface((12, 12), pygame.SRCALPHA)
-    pygame.draw.circle(glow, (0, 255, 60, 50), (6, 6), 6)
+    pygame.draw.circle(glow, (*led_color, 50), (6, 6), 6)
     surf.blit(glow, (gx - 6, gy - 6))
-    pygame.draw.circle(surf, (0, 255, 60), (gx, gy), 3)
-    pygame.draw.circle(surf, (150, 255, 180), (gx, gy), 3, 1)
+    pygame.draw.circle(surf, led_color, (gx, gy), 3)
+    lighter = tuple(min(255, c + 100) for c in led_color)
+    pygame.draw.circle(surf, lighter, (gx, gy), 3, 1)
 
     # Layer 7: Black corrugated intake hose
     hose_pts = [(0, 22), (4, 18), (7, 12), (8, 6), (6, 0), (4, -4), (0, -8)]
@@ -354,7 +367,7 @@ def _build_robot_surface(r):
     ix, iy = half, half + 24
     pygame.draw.rect(surf, (20, 20, 25), (ix - 15, iy - 4, 30, 8))
     for rx_off in [-8, 0, 8]:
-        pygame.draw.circle(surf, (30, 100, 220), (ix + rx_off, iy), 4)
+        pygame.draw.circle(surf, roller_color, (ix + rx_off, iy), 4)
         pygame.draw.circle(surf, WHITE, (ix + rx_off, iy), 4, 1)
 
     # Layer 9: Turret base ring
@@ -427,11 +440,214 @@ def draw_robot(screen, state):
     screen.blit(rotated, rotated.get_rect(center=(int(r.x), int(r.y))))
 
 
+
 # ============================================================
 # HUD
 # ============================================================
 def draw_hud(screen, state):
     """Draw the heads-up display panel."""
+    if state.game_mode == "1v1" and state.robot2 is not None:
+        _draw_hud_1v1(screen, state)
+    else:
+        _draw_hud_solo(screen, state)
+
+
+def _draw_hud_1v1(screen, state):
+    """Split HUD for 1v1 mode: P1 top half, timer middle, P2 bottom half."""
+    panel = pygame.Rect(HX, FY - 5, HW, H - FY + 5)
+    _round_rect(screen, panel, BG_DARK, 6)
+    pygame.draw.rect(screen, GRAY, panel, 2, border_radius=6)
+
+    # ── Team ZENITH branding header ──────────────────────────────────────────
+    strip_rect = pygame.Rect(HX, FY, HW, 30)
+    pygame.draw.rect(screen, ZENITH_DARK, strip_rect)
+    pygame.draw.line(screen, ZENITH_PURPLE, (HX, FY + 30), (HX + HW, FY + 30), 1)
+    label_surf = f_small.render(ZENITH_LABEL, True, ZENITH_ACCENT)
+    label_rect = label_surf.get_rect(center=(HX + HW // 2, FY + 15))
+    screen.blit(label_surf, label_rect)
+    tag_surf = f_micro.render(ZENITH_TAG, True, ZENITH_ACCENT)
+    tag_surf.set_alpha(150)
+    tag_rect = tag_surf.get_rect(center=(HX + HW // 2, FY + 30 + 9))
+    screen.blit(tag_surf, tag_rect)
+    # ──────────────────────────────────────────────────────────────────────────
+
+    y = FY + 50
+
+    # Phase label
+    pc = WHITE
+    pt = "TELEOP"
+    if state.phase == "ENDGAME":
+        pt = "ENDGAME" if int(state.timer * 3) % 2 == 0 else ""
+        pc = ORANGE
+    lbl = f_hud_s.render(pt, True, pc)
+    screen.blit(lbl, (HX + HW // 2 - lbl.get_width() // 2, y))
+    y += f_hud_s.get_height() + 4
+
+    # Timer (compact)
+    t = max(0, int(state.timer))
+    ts = f"{t // 60}:{t % 60:02d}"
+    if not state.timer_running and state.phase != "FINISHED":
+        tc = (120, 120, 120)
+    elif state.phase == "ENDGAME" and int(state.timer * 4) % 2 == 0:
+        tc = ORANGE
+    else:
+        tc = WHITE
+    lbl = f_hud_s.render(ts, True, tc)
+    screen.blit(lbl, (HX + HW // 2 - lbl.get_width() // 2, y))
+    y += f_hud_s.get_height() + 6
+
+    # Motif (compact)
+    for mi, c in enumerate(state.motif):
+        mx = HX + 30 + mi * 36
+        clr = GREEN if c == "G" else PURPLE
+        pygame.draw.circle(screen, clr, (mx, y + 8), 8)
+        pygame.draw.circle(screen, WHITE, (mx, y + 8), 8, 1)
+    y += 24
+
+    pygame.draw.line(screen, DARK_GRAY, (HX + 15, y), (HX + HW - 15, y), 2)
+    y += 6
+
+    # ── Shared gate (between P1 and P2) ─────────────────────────────────────
+    gtxt = "GATE: OPEN" if state.team.gate_open else "GATE: CLOSED"
+    gc = GATE_OPEN_COLOR if state.team.gate_open else GATE_COLOR
+    lbl = f_tiny.render(gtxt, True, gc)
+    screen.blit(lbl, (HX + 18, y))
+    y += f_tiny.get_height() + 6
+
+    # ── P1 panel (BLUE) ──────────────────────────────────────────────────────
+    lbl = f_small.render("P1 — BLUE", True, ALLIANCE_BLUE)
+    screen.blit(lbl, (HX + 18, y))
+    y += f_small.get_height() + 4
+
+    p1_in_zone = state.in_launch_zone(state.robot.x, state.robot.y)
+    after_p1 = _draw_player_hud_section(screen, state.team, state.robot, state.park_status,
+                             state.intake_active, state.intake_heat,
+                             state.intake_overheated, state.intake_cooldown_timer,
+                             state, y, ALLIANCE_BLUE, in_zone=p1_in_zone)
+
+    # ── P2 panel (RED) ───────────────────────────────────────────────────────
+    y = after_p1 + 4
+    lbl = f_small.render("P2 — RED", True, ALLIANCE_RED)
+    screen.blit(lbl, (HX + 18, y))
+    y += f_small.get_height() + 4
+
+    p2_in_zone = state.in_launch_zone2(state.robot2.x, state.robot2.y)
+    after_p2 = _draw_player_hud_section(screen, state.team2, state.robot2, state.park_status2,
+                             state.intake_active2, state.intake_heat2,
+                             state.intake_overheated2, state.intake_cooldown_timer2,
+                             state, y, ALLIANCE_RED, in_zone=p2_in_zone)
+
+    # Winner indicator at match end
+    if state.phase == "FINISHED":
+        s1 = state.team.total_score()
+        s2 = state.team2.total_score()
+        if s1 > s2:
+            winner, wclr = "P1 WINS", ALLIANCE_BLUE
+        elif s2 > s1:
+            winner, wclr = "P2 WINS", ALLIANCE_RED
+        else:
+            winner, wclr = "TIE", GOLD
+        lbl = f_small.render(winner, True, wclr)
+        screen.blit(lbl, (HX + HW // 2 - lbl.get_width() // 2, FY + 50 + f_hud_s.get_height() + f_hud_s.get_height() + 30))
+
+
+def _draw_player_hud_section(screen, team, robot, park_status,
+                             intake_active, intake_heat, intake_overheated, intake_cooldown_timer,
+                             state, y, accent_color, in_zone=False):
+    """Draw a compact single-player HUD section."""
+    ztxt = "IN ZONE" if in_zone else "OUTSIDE"
+    zsym = "\u2713" if in_zone else "\u2717"
+    zc = GREEN if in_zone else GRAY
+    lbl = f_tiny.render(f"{zsym} {ztxt}", True, zc)
+    screen.blit(lbl, (HX + 18, y))
+    y += f_tiny.get_height() + 3
+
+    # Intake status
+    if intake_overheated:
+        itxt, iclr = "INTAKE: COOLDOWN", HEAT_RED
+    elif intake_active:
+        itxt, iclr = "INTAKE: ON", GREEN
+    else:
+        itxt, iclr = "INTAKE: OFF", GRAY
+    lbl = f_tiny.render(itxt, True, iclr)
+    screen.blit(lbl, (HX + 18, y))
+    y += f_tiny.get_height() + 3
+
+    # Heat bar
+    bar_x, bar_y = HX + 18, y
+    bar_w, bar_h = HW - 36, 8
+    pygame.draw.rect(screen, DARK_GRAY, (bar_x, bar_y, bar_w, bar_h), border_radius=3)
+    if intake_heat > 0:
+        fill_w = int(bar_w * intake_heat)
+        if intake_heat < 0.5:
+            t = intake_heat / 0.5
+            bar_clr = (int(lerp(60, 230, t)), int(lerp(200, 200, t)), int(lerp(80, 40, t)))
+        elif intake_heat < 0.8:
+            t = (intake_heat - 0.5) / 0.3
+            bar_clr = (int(lerp(230, 240, t)), int(lerp(200, 140, t)), int(lerp(40, 30, t)))
+        else:
+            t = (intake_heat - 0.8) / 0.2
+            bar_clr = (int(lerp(240, 220, t)), int(lerp(140, 50, t)), int(lerp(30, 40, t)))
+        pygame.draw.rect(screen, bar_clr, (bar_x, bar_y, fill_w, bar_h), border_radius=3)
+    if intake_overheated:
+        cd_txt = f_tiny.render(f"{intake_cooldown_timer:.1f}s", True, HEAT_RED)
+        screen.blit(cd_txt, (bar_x + bar_w + 6, bar_y - 1))
+    y += bar_h + 6
+
+    # Score (compact)
+    lbl = f_tiny.render(f"Score: {team.total_score()}  |  Cls: {team.classified}  |  Ovf: {team.overflow}  |  Pt: {team.pattern_pts}  |  Base: {team.base_pts}", True, WHITE)
+    screen.blit(lbl, (HX + 18, y))
+    y += f_tiny.get_height() + 4
+
+    # Ramp (compact)
+    slot_sz = 18
+    gap = 2
+    total_w = CONFIG["ramp_slots"] * slot_sz + (CONFIG["ramp_slots"] - 1) * gap
+    start_x = HX + (HW - total_w) // 2
+    for i in range(CONFIG["ramp_slots"]):
+        sx = start_x + i * (slot_sz + gap)
+        sr = pygame.Rect(sx, y, slot_sz, slot_sz)
+        if team.ramp[i] is not None:
+            c = GREEN if team.ramp[i] == "G" else PURPLE
+            pygame.draw.rect(screen, c, sr, border_radius=3)
+        else:
+            pygame.draw.rect(screen, SLOT_EMPTY, sr, border_radius=3)
+        pygame.draw.rect(screen, SLOT_BORDER, sr, 1, border_radius=3)
+    y += slot_sz + 6
+
+    # Park status
+    PARK_NONE_CLR = DARK_GRAY
+    PARK_NONE_LBL = (100, 100, 105)
+    PARK_PARTIAL_CLR = GOAL_GOLD
+    PARK_FULL_CLR = PARK_GREEN
+    cell_w, cell_h = 20, 12
+    cell_gap = 2
+    bar_x = HX + 22
+    for ci in range(3):
+        cx = bar_x + ci * (cell_w + cell_gap)
+        if park_status == "FULL":
+            cell_clr = PARK_FULL_CLR
+        elif park_status == "PARTIAL" and ci < 2:
+            cell_clr = PARK_PARTIAL_CLR
+        else:
+            cell_clr = (40, 40, 45)
+        pygame.draw.rect(screen, cell_clr, (cx, y, cell_w, cell_h), border_radius=3)
+        pygame.draw.rect(screen, SLOT_BORDER, (cx, y, cell_w, cell_h), 1, border_radius=3)
+    if park_status == "FULL":
+        stxt, sclr = "FULLY PARKED", PARK_FULL_CLR
+    elif park_status == "PARTIAL":
+        stxt, sclr = "PARTIAL", PARK_PARTIAL_CLR
+    else:
+        stxt, sclr = "NOT PARKED", PARK_NONE_LBL
+    lbl = f_tiny.render(stxt, True, sclr)
+    screen.blit(lbl, (bar_x + 3 * (cell_w + cell_gap) + 6, y + cell_h // 2 - lbl.get_height() // 2))
+
+    pygame.draw.line(screen, DARK_GRAY, (HX + 15, y + cell_h + 6), (HX + HW - 15, y + cell_h + 6), 2)
+    return y + cell_h + 6
+
+
+def _draw_hud_solo(screen, state):
+    """Solo-mode HUD (unchanged from original)."""
     HUD_BRAND_H = 48
 
     panel = pygame.Rect(HX, FY - 5, HW, H - FY + 5)
@@ -528,14 +744,14 @@ def draw_hud(screen, state):
     if heat > 0:
         fill_w = int(bar_w * heat)
         if heat < 0.5:
-            t = heat / 0.5
-            bar_clr = (int(lerp(60, 230, t)), int(lerp(200, 200, t)), int(lerp(80, 40, t)))
+            t2 = heat / 0.5
+            bar_clr = (int(lerp(60, 230, t2)), int(lerp(200, 200, t2)), int(lerp(80, 40, t2)))
         elif heat < 0.8:
-            t = (heat - 0.5) / 0.3
-            bar_clr = (int(lerp(230, 240, t)), int(lerp(200, 140, t)), int(lerp(40, 30, t)))
+            t2 = (heat - 0.5) / 0.3
+            bar_clr = (int(lerp(230, 240, t2)), int(lerp(200, 140, t2)), int(lerp(40, 30, t2)))
         else:
-            t = (heat - 0.8) / 0.2
-            bar_clr = (int(lerp(240, 220, t)), int(lerp(140, 50, t)), int(lerp(30, 40, t)))
+            t2 = (heat - 0.8) / 0.2
+            bar_clr = (int(lerp(240, 220, t2)), int(lerp(140, 50, t2)), int(lerp(30, 40, t2)))
         pygame.draw.rect(screen, bar_clr, (bar_x, bar_y, fill_w, bar_h), border_radius=3)
     if state.intake_overheated:
         cd_txt = f_tiny.render(f"{state.intake_cooldown_timer:.1f}s", True, HEAT_RED)
@@ -643,7 +859,7 @@ def _build_end_overlay(state):
     surf = pygame.Surface((W, H), pygame.SRCALPHA)
     surf.fill((0, 0, 0, 200))
 
-    cx, cy = W // 2, H // 2 - 30
+    cx, cy = W // 2, H // 2 - 60
     overlay_cx = cx
 
     lbl = f_huge.render("MATCH OVER", True, GOLD)
@@ -669,39 +885,98 @@ def _build_end_overlay(state):
     cy += brand_offset
     # ─────────────────────────────────────────────────────────────────────────
 
-    t = state.team
-    lbl = f_hud.render(f"FINAL SCORE: {t.total_score()}", True, WHITE)
-    surf.blit(lbl, (cx - lbl.get_width() // 2, cy))
-    cy += 40
+    if state.game_mode == "1v1" and state.team2 is not None:
+        # 1v1: show both scores side by side
+        s1 = state.team.total_score()
+        s2 = state.team2.total_score()
 
-    breakdown = [
-        f"Classified: {t.classified} pts  |  Overflow: {t.overflow}  |  Depot: {t.depot}",
-        f"Pattern: {t.pattern_pts} pts",
-    ]
-    for line in breakdown:
-        lbl = f_small.render(line, True, SOFT_WHITE)
+        # P1 score (left)
+        lbl = f_small.render("P1 — BLUE", True, ALLIANCE_BLUE)
+        surf.blit(lbl, (cx - 200 - lbl.get_width() // 2, cy))
+        lbl = f_hud.render(str(s1), True, ALLIANCE_BLUE)
+        surf.blit(lbl, (cx - 200 - lbl.get_width() // 2, cy + 24))
+
+        # P2 score (right)
+        lbl = f_small.render("P2 — RED", True, ALLIANCE_RED)
+        surf.blit(lbl, (cx + 200 - lbl.get_width() // 2, cy))
+        lbl = f_hud.render(str(s2), True, ALLIANCE_RED)
+        surf.blit(lbl, (cx + 200 - lbl.get_width() // 2, cy + 24))
+
+        cy += 80
+
+        # Winner
+        if s1 > s2:
+            winner, wclr = "P1 WINS", ALLIANCE_BLUE
+        elif s2 > s1:
+            winner, wclr = "P2 WINS", ALLIANCE_RED
+        else:
+            winner, wclr = "TIE", GOLD
+        lbl = f_hud.render(winner, True, wclr)
+        surf.blit(lbl, (cx - lbl.get_width() // 2, cy))
+        cy += f_hud.get_height() + 16
+
+        # Breakdowns side by side
+        bx1 = cx - 200
+        bx2 = cx + 200
+        for team, bx, color in [(state.team, bx1, ALLIANCE_BLUE), (state.team2, bx2, ALLIANCE_RED)]:
+            lines = [
+                f"Cls: {team.classified}  Ovf: {team.overflow}  Depot: {team.depot}",
+                f"Pattern: {team.pattern_pts}  Base: {team.base_pts}",
+            ]
+            for i, line in enumerate(lines):
+                lbl = f_tiny.render(line, True, color)
+                surf.blit(lbl, (bx - lbl.get_width() // 2, cy + i * 18))
+        cy += 40
+    else:
+        # Solo: original layout
+        t = state.team
+        lbl = f_hud.render(f"FINAL SCORE: {t.total_score()}", True, WHITE)
+        surf.blit(lbl, (cx - lbl.get_width() // 2, cy))
+        cy += 40
+
+        breakdown = [
+            f"Classified: {t.classified} pts  |  Overflow: {t.overflow}  |  Depot: {t.depot}",
+            f"Pattern: {t.pattern_pts} pts",
+        ]
+        for line in breakdown:
+            lbl = f_small.render(line, True, SOFT_WHITE)
+            surf.blit(lbl, (cx - lbl.get_width() // 2, cy))
+            cy += 22
+
+        ps = state.park_status
+        if ps == "FULL":
+            park_txt = "Fully parked: +10"
+            park_clr = PARK_GREEN
+        elif ps == "PARTIAL":
+            park_txt = "Partially parked: +5"
+            park_clr = GOAL_GOLD
+        else:
+            park_txt = "Not parked: +0"
+            park_clr = RED_ACCENT
+        lbl = f_small.render(park_txt, True, park_clr)
         surf.blit(lbl, (cx - lbl.get_width() // 2, cy))
         cy += 22
+        cy += 20
 
-    ps = state.park_status
-    if ps == "FULL":
-        park_txt = "Fully parked: +10"
-        park_clr = PARK_GREEN
-    elif ps == "PARTIAL":
-        park_txt = "Partially parked: +5"
-        park_clr = GOAL_GOLD
-    else:
-        park_txt = "Not parked: +0"
-        park_clr = RED_ACCENT
-    lbl = f_small.render(park_txt, True, park_clr)
-    surf.blit(lbl, (cx - lbl.get_width() // 2, cy))
-    cy += 22
-    cy += 30
+    # Buttons
+    btn_w = 200
+    btn_h = 44
+    btn_gap = 30
+    btn_y = H - 100
+    _end_btn_rects[0] = pygame.Rect(cx - btn_w - btn_gap // 2, btn_y, btn_w, btn_h)
+    _end_btn_rects[1] = pygame.Rect(cx + btn_gap // 2, btn_y, btn_w, btn_h)
 
-    lbl = f_small.render("F5 to reset  |  F10 to quit", True, WHITE)
-    surf.blit(lbl, (cx - lbl.get_width() // 2, cy))
+    for i, (label, rect) in enumerate(zip(["RESTART", "EXIT TO MENU"], _end_btn_rects)):
+        pygame.draw.rect(surf, MENU_BG, rect, border_radius=6)
+        pygame.draw.rect(surf, MENU_BORDER, rect, 1, border_radius=6)
+        lbl = f_small.render(label, True, MENU_TEXT)
+        surf.blit(lbl, (rect.centerx - lbl.get_width() // 2,
+                        rect.centery - lbl.get_height() // 2))
 
     _end_overlay = surf
+
+
+_end_btn_rects = [None, None]
 
 
 def draw_match_end(screen, state):
@@ -715,10 +990,21 @@ def draw_match_end(screen, state):
     screen.blit(_end_overlay, (0, 0))
 
 
+def draw_match_end_buttons(screen, state, end_menu_index):
+    """Draw highlight on top of the already-blitted match-end overlay."""
+    if state.phase != "FINISHED":
+        return
+    if _end_btn_rects[0] is None:
+        return
+    rect = _end_btn_rects[end_menu_index]
+    if rect is not None:
+        pygame.draw.rect(screen, MENU_HIGHLIGHT_BORDER, rect, 3, border_radius=6)
+
+
 # ============================================================
 # PAUSE MENU
 # ============================================================
-_PAUSE_MENU_BUTTONS = ["Resume", "Restart Game", "Detect Gamepads", "Options", "Exit"]
+_PAUSE_MENU_BUTTONS = ["Resume", "Restart Game", "Detect Gamepads", "Options", "Mode Select", "Quit"]
 _pause_menu_rects = []
 
 
@@ -730,7 +1016,10 @@ def draw_pause_menu(screen, state):
     overlay.fill(PAUSE_OVERLAY)
     screen.blit(overlay, (0, 0))
 
-    panel_w, panel_h = 320, 390
+    panel_w, panel_h = 320, 442
+    # Shrink panel when Options is hidden (1v1)
+    if state.game_mode == "1v1":
+        panel_h -= 52
     panel_x = (W - panel_w) // 2
     panel_y = (H - panel_h) // 2
 
@@ -751,7 +1040,10 @@ def draw_pause_menu(screen, state):
     start_y = panel_y + 85
     gap = 52
 
-    for i, label in enumerate(_PAUSE_MENU_BUTTONS):
+    # In 1v1, hide the Options button (keybinds are locked to defaults)
+    buttons = [b for b in _PAUSE_MENU_BUTTONS if b != "Options" or state.game_mode != "1v1"]
+
+    for i, label in enumerate(buttons):
         btn_y = start_y + i * gap
         btn_rect = pygame.Rect(btn_x, btn_y, btn_w, btn_h)
         _pause_menu_rects.append(btn_rect)

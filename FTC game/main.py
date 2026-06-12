@@ -1,17 +1,33 @@
 """
 FTC DECODE (2025-2026) Match Simulator — Entry point.
-One purple robot collecting artifacts, classifying them into a goal.
+Thin dispatcher: init, menu routing, dispatch to mode files.
 """
 
+import sys
 import pygame
-from config import CONFIG, VW, VH, BLACK, render_surf
-from drawing import init_drawing, draw_field, draw_artifacts, draw_robot, draw_hud, draw_match_end, draw_pause_menu, draw_options_screen
-from game_logic import (
-    update_timer, update_turret_angle,
-    _physics_lock, start_physics_thread, stop_physics_thread,
-)
-from input_handler import handle_input, init_joysticks
+import menu as menu_mod
+import mode_solo
+import mode_1v1
+from config import CONFIG, VW, VH, BG_DARK, BLACK, render_surf
+from drawing import init_drawing
+from game_logic import rebuild_obstacle_cache
+from input_handler import init_joysticks
 from game_state import GameState
+
+
+def _blit_scaled(canvas, screen):
+    """Scale the virtual canvas to the window, preserving aspect ratio with letterbox."""
+    win_w, win_h = screen.get_size()
+    sx = win_w / VW
+    sy = win_h / VH
+    sf = min(sx, sy)
+    scaled_w = int(VW * sf)
+    scaled_h = int(VH * sf)
+    ox = (win_w - scaled_w) // 2
+    oy = (win_h - scaled_h) // 2
+    scaled = pygame.transform.smoothscale(canvas, (scaled_w, scaled_h))
+    screen.fill(BLACK)
+    screen.blit(scaled, (ox, oy))
 
 
 def main():
@@ -27,62 +43,87 @@ def main():
     print(f"Detected {gpad_count} gamepad(s)")
     init_joysticks()
 
-    state = GameState()
-
-    # Start background physics thread
-    start_physics_thread(state)
+    # ── App-level screen state ──────────────────────────────────────────
+    app_screen = "mode_select"   # "mode_select" | "controller_assign" | "game"
+    menu_selected = 0
+    ca_p1 = 0
+    ca_p2 = 1
+    ca_col = 0
+    chosen_mode = "solo"
+    state = None
 
     try:
         while True:
-            dt = min(clock.tick_busy_loop(CONFIG["fps"]) / 1000.0, 0.05)
+            # ── OUTER LOOP: mode select + controller assign ─────────────
+            while app_screen in ("mode_select", "controller_assign"):
+                dt_menu = clock.tick_busy_loop(60) / 1000.0
+                events = pygame.event.get()
+                keys = pygame.key.get_pressed()
 
-            # Input + timer + turret all run on main thread.
-            # handle_input may request a reset; if so we re-sync under lock.
-            reset_requested = handle_input(state, dt)
+                for ev in events:
+                    if ev.type == pygame.QUIT:
+                        pygame.quit()
+                        sys.exit()
+                    if ev.type == pygame.VIDEORESIZE:
+                        pygame.display.set_mode((ev.w, ev.h), pygame.RESIZABLE)
 
-            if reset_requested:
-                # Physics thread must not touch state during reset
-                with _physics_lock:
-                    state.reset()
-                # Re-sync: the physics thread will pick up the fresh state
-                # on its next iteration.
+                if app_screen == "mode_select":
+                    menu_selected, result = menu_mod.handle_mode_select(events, keys, menu_selected)
+                    if result == "solo":
+                        chosen_mode = "solo"
+                        state = GameState(game_mode="solo")
+                        rebuild_obstacle_cache(state)
+                        app_screen = "game"
+                    elif result == "1v1":
+                        chosen_mode = "1v1"
+                        app_screen = "controller_assign"
 
-            update_turret_angle(state)
+                elif app_screen == "controller_assign":
+                    num_joy = pygame.joystick.get_count()
+                    ca_p1, ca_p2, ca_col, result = menu_mod.handle_controller_assign(
+                        events, keys, ca_p1, ca_p2, ca_col, num_joy,
+                        game_mode=chosen_mode)
+                    if result == "back":
+                        app_screen = "mode_select"
+                    elif result is not None:
+                        p1_dev, p2_dev = result
+                        state = GameState(game_mode=chosen_mode)
+                        state.p1_device = p1_dev
+                        state.p2_device = p2_dev
+                        rebuild_obstacle_cache(state)
+                        app_screen = "game"
 
-            # Render under lock so physics thread doesn't mutate state mid-draw
-            # update_timer also runs under lock so score_pattern/score_base
-            # are atomic with respect to flying artifact scoring.
-            with _physics_lock:
-                update_timer(state, dt)
-                render_surf.fill(BLACK)
-                draw_field(render_surf, state)
-                draw_artifacts(render_surf, state)
-                draw_robot(render_surf, state)
-                draw_hud(render_surf, state)
-                if state.phase == "FINISHED":
-                    draw_match_end(render_surf, state)
-                if not state.timer_running and state.phase != "FINISHED":
-                    draw_pause_menu(render_surf, state)
-                if state.options_active:
-                    draw_options_screen(render_surf, state)
+                # Draw menu screens
+                render_surf.fill(BG_DARK)
+                if app_screen == "mode_select":
+                    menu_mod.draw_mode_select(render_surf, menu_selected)
+                elif app_screen == "controller_assign":
+                    conflict = (ca_p1 == ca_p2)
+                    menu_mod.draw_controller_assign(render_surf, ca_p1, ca_p2,
+                                                    pygame.joystick.get_count(), conflict,
+                                                    game_mode=chosen_mode)
+                _blit_scaled(render_surf, win)
+                pygame.display.flip()
 
-            win_w, win_h = win.get_size()
-            sx = win_w / VW
-            sy = win_h / VH
-            sf = min(sx, sy)
-            scaled_w = int(VW * sf)
-            scaled_h = int(VH * sf)
-            ox = (win_w - scaled_w) // 2
-            oy = (win_h - scaled_h) // 2
+            if app_screen != "game":
+                break
 
-            scaled = pygame.transform.smoothscale(render_surf, (scaled_w, scaled_h))
-            win.fill(BLACK)
-            win.blit(scaled, (ox, oy))
-            pygame.display.flip()
+            # ── Dispatch to mode ────────────────────────────────────────
+            if state.game_mode == "solo":
+                result = mode_solo.run_solo(win, render_surf, clock, state)
+            elif state.game_mode == "1v1":
+                result = mode_1v1.run_1v1(win, render_surf, clock, state)
+            else:
+                result = "quit"
+
+            if result == "quit":
+                break
+            elif result == "menu":
+                app_screen = "mode_select"
+
     except SystemExit:
         pass
     finally:
-        stop_physics_thread()
         pygame.quit()
 
 

@@ -9,7 +9,7 @@ Jocul accepta orice controler/gamepad compatibil **SDL**, detectat automat prin 
 - **Nintendo Switch Pro Controller**
 - **Controlere generice USB sau Bluetooth** cu scheme de butoane Xbox-compatible
 
-> **Nota:** Doar primul controler conectat este utilizat. Daca ai mai multe, deconecteaza-le pe celelalte inainte de a porni jocul.
+> **Nota:** In modul Solo, toate controlerele conectate functioneaza simultan. In modul 1v1, fiecare jucator isi alege cate un controler.
 
 La pornire, numele controlerului detectat apare in consola (ex: `Gamepad 0: Xbox Controller`).
 
@@ -17,7 +17,7 @@ La pornire, numele controlerului detectat apare in consola (ex: `Gamepad 0: Xbox
 
 ## Moduri de deplasare
 
-Jocul dispune de **doua moduri de deplasare**, comutabile cu tasta `R` (tastatura):
+Jocul dispune de **doua moduri de deplasare**, comutabile cu tasta `R` (tastatura) sau `LB` (controler):
 
 | Mod | Comportament |
 |---|---|
@@ -26,13 +26,11 @@ Jocul dispune de **doua moduri de deplasare**, comutabile cu tasta `R` (tastatur
 
 Modul curent este afisat intr-un badge in coltul stanga sus al terenului.
 
-> Pe controler, modul se comuta cu `LB` (butonul 4).
-
 ---
 
 ## Control cu tastatura
 
-### Deplasare si rotatie
+### Deplasare si rotatie — P1
 
 | Tasta | Actiune |
 |---|---|
@@ -43,11 +41,11 @@ Modul curent este afisat intr-un badge in coltul stanga sus al terenului.
 | `←` (sagata stanga) | Roteste robotul in sens antiorar |
 | `→` (sagata dreapta) | Roteste robotul in sens orar |
 
-### Actiuni
+### Actiuni — P1
 
 | Tasta | Actiune |
 |---|---|
-| `E` | Porneste / opreste intakes-ul (ridicare continua). Cand e pornit, robotul ridica automat artefactele din fata lui |
+| `E` | Tine apasat pentru intake (ridicare continua cat timp e tinut; blocat cand e supraincalzit) |
 | `Q` | Lanseaza TOATE artefactele detinute spre gol (oricate ar avea) |
 | `R` | Comuteaza modul de deplasare (Robot / Field) |
 | `T` | Deschide / inchide poarta ( trebuie sa fii in raza de actiune a portii ) |
@@ -60,6 +58,25 @@ Modul curent este afisat intr-un badge in coltul stanga sus al terenului.
 | `F6` | Porneste cronometrul (doar cand e oprit) |
 | `ESC` | Pauza / Resume (sau inchide ecranul Options daca e deschis) |
 | `F10` | Iesire din joc |
+
+> **Sageti Numpad:** Tastele `KP8`/`KP2`/`KP4`/`KP6` functioneaza ca sagetile obisnuite in toate meniurile (selectie mod, asignare controler, pauza, sfarsit de meci, Options).
+
+### P2 — Control cu tastatura (1v1)
+
+In modul 1v1, P2 foloseste urmatoarele taste (implicate, nu pot fi personalizate):
+
+| Tasta | Actiune |
+|---|---|
+| `I` | Inainte |
+| `K` | Inapoi |
+| `J` | Strafe stanga |
+| `L` | Strafe dreapta |
+| `U` | Roteste robotul in sens antiorar |
+| `O` | Roteste robotul in sens orar |
+| `P` | Tine apasat pentru intake (blocat cand e supraincalzit) |
+| `;` | Lanseaza TOATE artefactele detinute spre gol |
+| `.` | Deschide / inchide poarta |
+| `M` | Comuteaza modul de deplasare (Robot / Field) |
 
 ---
 
@@ -138,7 +155,7 @@ Scopul este sa colectezi artefacte de pe teren, sa le clasifici pe rampa si sa l
 
 ### Parcare
 
-- La sfarsitul meciului, parca robotul in **zona de baza** (patratul din coltul stanga-jos al terenului, la 100px de margini)
+- La sfarsitul meciului, parca robotul in **zona de baza** (patratul din coltul stanga-jos al terenului)
 - Robotul complet inauntru → +10 puncte
 - Robotul partial in zona → +5 puncte
 - Robotul in afara → 0 puncte
@@ -150,28 +167,46 @@ Scopul este sa colectezi artefacte de pe teren, sa le clasifici pe rampa si sa l
 
 ### Pauza si reset
 
-- `ESC` (tastatura) / `Y` (controler) — pune pe pauza / reia cronometrul
+- `ESC` (tastatura) — pune pe pauza / reia cronometrul (si porneste cronometrul cand e oprit)
+- In 1v1, **ambii jucatori** pot pune pauza prin `ESC`
 - Cand cronometrul e oprit, robotul **nu se misca** si nu poate interactiona
 - Starea intakes-ului (pornit/oprit, caldura, cooldown) se reseteaza la fiecare pauza, sfarsit de meci sau reset
-- Navigare meniu pauza: `↑`/`↓` sau `KP8`/`KP2` (numpad), D-pad/Stick (controler)
-- Selectie: `Enter`/`Space` (tastatura) sau `A` (controler)
-- `F5` (tastatura) / `Back` (controler) — reseteaza intregul joc (teren, artefacte, scor)
+- Navigare meniu pauza: `↑`/`↓` sau `KP8`/`KP2` (numpad)
+- Selectie: `Enter`/`Space`
+- Butoanele meniului de pauza:
+  - **Resume** — reia meciul
+  - **Restart Game** — reseteaza terenul si incepe un nou meci
+  - **Detect Gamepads** — rescaneaza controlerele conectate
+  - **Options** — personalizeaza tastele si butoanele (ascuns in modul 1v1)
+  - **Mode Select** — revenire la ecranul de selectie a modului
+  - **Quit** — iesire din joc
+- `F5` (tastatura) — reseteaza intregul joc (teren, artefacte, scor)
 - `F10` — iesire din joc
+
+### Ecranul de sfarsit de meci
+
+- Dupa terminarea meciului, apar butoanele **Restart** si **Exit**
+- Navigare intre butoane: `←`/`→` (sageti) sau `KP4`/`KP6` (numpad)
+- Selectie: `Enter`/`Space` (tastatura)
+- `F5` (tastatura) — reseteaza meciul (scurtatura)
+- `F10` (tastatura) — iesire din joc (scurtatura)
 
 ### Ecranul Options (Personalizare taste)
 
 Din meniul de pauza, selecteaza **Options** pentru a personaliza tastele si butoanele:
 
-- Doua tab-uri: **KEYBOARD** si **GAMEPAD**, comutabile cu sagetile Left/Right (`KP4`/`KP6` pe numpad) sau bumperele LB/RB
-- Navigheaza cu sagetile Up/Down (`KP8`/`KP2` pe numpad) sau D-pad/Stick (controler)
-- Apasa **Enter** (tastatura) sau **A** (controler) pe un rand pentru a incepe rebinding-ul
-- In timpul rebinding-ului: apasa orice tasta/but nou pentru a atribui, sau **Backspace** (tastatura) / **B** (controler) pentru a sterge
-- **Escape** (tastatura) sau **B** (controler) iesi din ecranul Options
+- Doua tab-uri: **KEYBOARD** si **GAMEPAD**, comutabile cu sagetile Left/Right (`KP4`/`KP6` pe numpad)
+- Navigheaza cu sagetile Up/Down (`KP8`/`KP2` pe numpad)
+- Apasa **Enter** pe un rand pentru a incepe rebinding-ul
+- In timpul rebinding-ului: apasa orice tasta/but nou pentru a atribui, sau **Backspace** pentru a sterge
+- **Escape** iesi din ecranul Options
 - Randul **Reset to Default** din partea de jos restaureaza toate tastele la valorile implicite
 - Legaturi duplicat sunt marcate cu `!`
 - Legaturi blocate (Reset pe controler) sunt marcate ca `(Fixed)`
 
-> Setarile de taste sunt salvate automat intr-un fisier `keybinds.json` in folderul jocului si persista intre sesiuni. La prima pornire se folosesc valorile implicite.
+> **Modul 1v1:** Ecranul Options este complet ascuns — butonul nu apare in meniul de pauza. Tastele sunt fixe (valorile implicite) si nu pot fi personalizate.
+
+> Setarile de taste sunt salvate automat intr-un fisier `keybinds.json` in folderul jocului si persista intre sesiuni (doar in Solo). La prima pornire se folosesc valorile implicite. In modul 1v1, tastele sunt intotdeauna cele implicite (fisierul JSON nu este citit).
 
 ---
 
@@ -188,3 +223,38 @@ Din meniul de pauza, selecteaza **Options** pentru a personaliza tastele si buto
 **Zona de lansare** include: triunghiul de sus, zona de baza (coltul stanga-jos), si triunghiul de shooting (centru-jos).
 
 **Motivul** (culorile care trebuie aliniate pe rampa) este generat aleator la fiecare reset: una dintre variantele `GPP`, `PGP` sau `PPG`.
+
+---
+
+## Moduri de joc
+
+### Solo Practice
+
+- Un singur jucator, control complet asupra robotului
+- **Mod dual-input**: Atat tastatura cat si controlerele conectate functioneaza simultan, indiferent ce dispozitiv ai ales la meniu — poti conduce cu WASD si sa pui pauza cu Y pe controler, sau sa conduci cu controlerul si sa lansezi cu Q
+- Poti exersa colectarea, clasificarea, lansarea si parcare fara presiunea unui adversar
+
+### 1v1 Local
+
+- Doi jucatori pe aceeasi tastatura/gamepad
+- Fiecare jucator are propriul robot, rampa, intake si scor
+- Artefactele sunt dublate: 18 de baza + 18 mirror pe jumatatea lui P2 (36 total)
+- **Robotii se ciocnesc intre ei** — daca cei doi roboti se suprapun, sunt impinsi automat la jumatatea distantei de separare pe cea mai mica axa (nu pot trece unul prin altul)
+- **Ambii jucatori pot pune pauza** prin `ESC`
+- La sfarsitul meciului, castigatorul este anuntat (P1 WINS / P2 WINS / TIE)
+- La selectarea modului 1v1, ambii jucator isi aleg dispozitivul de control (Gamepad 1 sau Gamepad 2)
+- **Tastele nu pot fi personalizate in 1v1** — meniul Options este ascuns si tastele raman la valorile implicite pe toata durata meciului
+
+### vs AI (prin modul 1v1)
+
+- Un jucator (P1) contra unui robot controlat de calculator (P2)
+- La selectarea modului 1v1, P2 alege **AI** in loc de Gamepad
+- **Robotii se ciocnesc intre ei** — daca cei doi roboti se suprapun, sunt impinsi automat (la fel ca in 1v1)
+- AI-ul foloseste o strategie bazata pe reguli:
+  1. **Protectie supraincalzire** — opreste intake-ul daca e supraincalzit
+  2. **Colectare** — cauta cel mai apropiat artefact (in raza de 300px) si se indreapta spre el
+  3. **Lansare** — daca detine artefacte si se afla in zona de lansare, le lanseaza spre gol
+  4. **Navigare** — daca detine artefacte dar nu e in zona de lansare, se indreapta spre zona de incarcare
+  5. **Asteptare** — daca nu sunt artefacte disponibile, mentine intake-ul pornit si asteapta
+
+> **⚠ Nota:** Modul vs AI este temporar dezactivat. Codul AI exista in `ai_controller.py` dar nu este conectat in `mode_1v1.py`. Cand P2 este setat pe AI, robotul P2 ramane nemiscat.

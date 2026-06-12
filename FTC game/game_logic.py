@@ -7,6 +7,15 @@ import threading
 
 import pygame
 from config import CONFIG, FX, FY, FS, clamp
+from game_logic_p2 import (
+    update_park_status2,
+    constrain_robot_r,
+    constrain_robot_robot,
+    update_intake_heat_p2,
+    score_pattern2,
+    score_base2,
+    update_turret_angle_r,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -26,6 +35,8 @@ def rebuild_obstacle_cache(state):
     g = state.goal_rect()
     d = state.depot_rect()
     _cached_obs_rect = pygame.Rect(g.left, g.top, g.w, d.bottom - g.top)
+    import game_logic_p2
+    game_logic_p2._set_obs_rect(_cached_obs_rect)
 
 
 def _get_obs_rect():
@@ -53,11 +64,17 @@ def update_timer(state, dt):
     elif state.phase == "ENDGAME" and state.timer <= 0:
         score_pattern(state)
         score_base(state)
+        if state.game_mode == "1v1" and state.robot2 is not None:
+            score_pattern2(state)
+            score_base2(state)
         state.phase = "FINISHED"
         state.timer = 0
         state.timer_running = False
         state.robot.vx = 0.0
         state.robot.vy = 0.0
+        if state.robot2 is not None:
+            state.robot2.vx = 0.0
+            state.robot2.vy = 0.0
 
 
 def score_pattern(state):
@@ -82,6 +99,9 @@ def score_base(state):
         state.team.base_pts = 10
     elif br.colliderect(rob_r):
         state.team.base_pts = 5
+
+
+
 
 
 # ---------------------------------------------------------------------------
@@ -127,11 +147,17 @@ def update_artifact_physics(state, dt):
         avx = a.vx
         avy = a.vy
 
-        # Early-exit: skip stationary artifacts far from robot
+        # Early-exit: skip stationary artifacts far from both robots
         if avx == 0.0 and avy == 0.0:
             rdx = ax - robot_x
             rdy = ay - robot_y
-            if rdx * rdx + rdy * rdy > skip_d_sq:
+            far_from_p1 = (rdx * rdx + rdy * rdy) > skip_d_sq
+            far_from_p2 = True
+            if state.robot2 is not None:
+                rdx2 = ax - state.robot2.x
+                rdy2 = ay - state.robot2.y
+                far_from_p2 = (rdx2 * rdx2 + rdy2 * rdy2) > skip_d_sq
+            if far_from_p1 and far_from_p2:
                 continue
 
         ax += avx * dt
@@ -263,33 +289,42 @@ def update_artifact_physics(state, dt):
                 a.vx += nx * push_force * dt
                 a.vy += ny * push_force * dt
 
+    # --- Phase 3b: P2 robot–artifact push ---
+    if state.robot2 is not None:
+        r2 = state.robot2
+        r2_x, r2_y = r2.x, r2.y
+        r2_vx, r2_vy = r2.vx, r2.vy
+        for a in active:
+            rdx = a.x - r2_x
+            rdy = a.y - r2_y
+            rdist_sq = rdx * rdx + rdy * rdy
+            if rdist_sq < min_d_robot * min_d_robot and rdist_sq > 0.0001:
+                rdist = math.sqrt(rdist_sq)
+                nx, ny = rdx / rdist, rdy / rdist
+                overlap = min_d_robot - rdist
+                a.x += nx * overlap
+                a.y += ny * overlap
+                relative_vx = a.vx - r2_vx
+                relative_vy = a.vy - r2_vy
+                dot = relative_vx * nx + relative_vy * ny
+                if dot < 0:
+                    e = robot_bounce
+                    imp = -(1 + e) * dot
+                    a.vx += imp * nx
+                    a.vy += imp * ny
+                spd = math.hypot(a.vx, a.vy)
+                if spd < push_force * 0.1:
+                    a.vx += nx * push_force * dt
+                    a.vy += ny * push_force * dt
+
 
 # ---------------------------------------------------------------------------
 # Robot constraint
 # ---------------------------------------------------------------------------
-def constrain_robot(state):
-    """Push the robot out of the goal+depot obstacle rect."""
-    r = state.robot
-    sz = CONFIG["robot_size"]
-    half = sz // 2
-    obs = _get_obs_rect()
 
-    for _ in range(_CONSTRAIN_MAX_ITER):
-        resolved = True
-        rob_rect = pygame.Rect(r.x - half, r.y - half, sz, sz)
-        if not rob_rect.colliderect(obs):
-            break
-        resolved = False
-        ol = rob_rect.right - obs.left
-        o_r = obs.right - rob_rect.left
-        ot = rob_rect.bottom - obs.top
-        ob = obs.bottom - rob_rect.top
-        if min(ol, o_r) < min(ot, ob):
-            r.x = obs.left - half if ol < o_r else obs.right + half
-        else:
-            r.y = obs.top - half if ot < ob else obs.bottom + half
-        if resolved:
-            break
+def constrain_robot(state):
+    """Push the robot out of the goal+depot obstacle rect (P1 wrapper)."""
+    constrain_robot_r(state, state.robot)
 
 
 # ---------------------------------------------------------------------------
@@ -306,6 +341,7 @@ def update_turret_angle(state):
     state.robot.turret_angle = current + diff
 
 
+
 # ---------------------------------------------------------------------------
 # Flying artifacts + gate timer (runs on physics thread under lock)
 # ---------------------------------------------------------------------------
@@ -318,20 +354,22 @@ def _update_flying_and_gate(state, dt):
         d = math.hypot(dx, dy)
         if d < 8:
             fa.active = False
+            # Route scoring to the correct team
+            team = state.team2 if fa.team == "p2" and state.team2 is not None else state.team
             if fa.scoring:
-                in_slot = state.team.add_to_ramp(fa.color)
+                in_slot = team.add_to_ramp(fa.color)
                 if in_slot:
-                    state.team.classified += 1
+                    team.classified += 1
             else:
                 placed = False
-                ramp = state.team.ramp
+                ramp = team.ramp
                 for i in range(CONFIG["ramp_slots"]):
                     if ramp[i] is None:
                         ramp[i] = fa.color
                         placed = True
                         break
                 if not placed:
-                    state.team.overflow_held.append(fa.color)
+                    team.overflow_held.append(fa.color)
         else:
             move = fa.speed * dt
             fa.x += (dx / d) * move
@@ -346,6 +384,12 @@ def _update_flying_and_gate(state, dt):
         if state.team.gate_timer <= 0:
             state.team.gate_open = False
             state.team.gate_timer = 0.0
+
+    if state.team2 is not None and state.team2.gate_open:
+        state.team2.gate_timer -= dt
+        if state.team2.gate_timer <= 0:
+            state.team2.gate_open = False
+            state.team2.gate_timer = 0.0
 
 
 # ---------------------------------------------------------------------------
@@ -373,18 +417,26 @@ def update_intake_heat(state, dt):
         state.intake_heat = max(0.0, state.intake_heat)
 
 
+
 # ---------------------------------------------------------------------------
 # Combined physics update (called from physics thread)
 # ---------------------------------------------------------------------------
 def update_physics(state, dt):
     """Run one frame of physics simulation (called under _physics_lock)."""
     update_park_status(state)
+    if state.robot2 is not None:
+        update_park_status2(state)
     if not state.timer_running:
         return
     constrain_robot(state)
     update_intake_heat(state, dt)
     update_artifact_physics(state, dt)
     _update_flying_and_gate(state, dt)
+
+    if state.robot2 is not None:
+        constrain_robot_r(state, state.robot2)
+        constrain_robot_robot(state)
+        update_intake_heat_p2(state, dt)
 
 
 # ---------------------------------------------------------------------------
@@ -407,6 +459,7 @@ def get_park_status(state):
 def update_park_status(state):
     """Update the park_status field on state."""
     state.park_status = get_park_status(state)
+
 
 
 # ---------------------------------------------------------------------------

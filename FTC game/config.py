@@ -56,6 +56,7 @@ HEAT_YELLOW = (230, 200, 40)
 HEAT_ORANGE = (240, 140, 30)
 HEAT_RED = (220, 50, 40)
 
+# Alliance accent colors (1v1 mode only)
 PAUSE_OVERLAY = (0, 0, 0, 180)
 MENU_BG = (30, 30, 36)
 MENU_BORDER = (69, 23, 163)         # ZENITH_PURPLE
@@ -94,11 +95,11 @@ CONFIG = {
     "robot_push_force": 600.0,
     "artifact_radius": 7,
     "goal_w": 130,
-    "goal_h": 130,
+    "goal_h": 142,
     "loading_zone_size": 100,
     "base_size": 80,
     "shooting_zone_size": 220,
-    "spike_cols": 2,
+    "spike_cols": 1,
     "spike_rows": 3,
     "ramp_h": 14,
     "depot_h": 20,
@@ -206,6 +207,28 @@ DEFAULT_KEYBINDS = {
     },
 }
 
+DEFAULT_KEYBINDS_P2 = {
+    "keyboard": {
+        "Move Forward": ("key", pygame.K_i),
+        "Move Backward": ("key", pygame.K_k),
+        "Strafe Left": ("key", pygame.K_j),
+        "Strafe Right": ("key", pygame.K_l),
+        "Rotate Left": ("key", pygame.K_u),
+        "Rotate Right": ("key", pygame.K_o),
+        "Toggle Intake": ("key", pygame.K_p),
+        "Launch Artifacts": ("key", pygame.K_SEMICOLON),
+        "Toggle Gate": ("key", pygame.K_PERIOD),
+        "Drive Mode": ("key", pygame.K_m),
+    },
+    "gamepad": {
+        "Launch": ("axis", 4),
+        "Intake": ("axis", 5),
+        "Gate": ("button", 2),
+        "Pause": ("button", 3),
+        "Drive Mode": ("button", 4),
+    }
+}
+
 LOCKED_KEYBINDS = {"keyboard": set(), "gamepad": {"Reset"}}
 
 
@@ -249,4 +272,40 @@ def load_keybinds():
         return result
     except Exception:
         print("  [keybinds] No saved keybinds found, using defaults")
+        return None
+
+
+# ============================================================
+# P2 KEYBIND PERSISTENCE
+# ============================================================
+_KEYBINDS_P2_FILE = os.path.join(_game_dir(), "keybinds_p2.json")
+
+
+def save_keybinds_p2(keybinds):
+    """Write P2 keybinds to keybinds_p2.json. Never raises."""
+    try:
+        data = {}
+        for page, bindings in keybinds.items():
+            data[page] = {action: list(binding) if binding else None
+                          for action, binding in bindings.items()}
+        with open(_KEYBINDS_P2_FILE, "w") as f:
+            json.dump(data, f, indent=2)
+    except Exception:
+        pass
+
+
+def load_keybinds_p2():
+    """Load P2 keybinds from keybinds_p2.json. Returns dict or None on failure."""
+    try:
+        with open(_KEYBINDS_P2_FILE, "r") as f:
+            data = json.load(f)
+        if "keyboard" not in data or "gamepad" not in data:
+            return None
+        result = {}
+        for page in ("keyboard", "gamepad"):
+            result[page] = {action: tuple(binding) if binding else None
+                            for action, binding in data[page].items()}
+        return result
+    except Exception:
+        print("  [keybinds_p2] No saved P2 keybinds found, using defaults")
         return None
