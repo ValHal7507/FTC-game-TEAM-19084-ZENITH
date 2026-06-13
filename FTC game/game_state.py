@@ -216,11 +216,15 @@ class GameState:
 
     def reset(self):
         """Reset the game to initial state, preserving 1v1 settings."""
+        from ai_controller import reset_ai
         saved_mode = self.game_mode
         saved_p1_dev = self.p1_device
         saved_p2_dev = self.p2_device
         # In 1v1, don't restore keybinds — always use defaults
         saved_p2_keybinds = copy.deepcopy(self.keybinds_p2) if self.game_mode != "1v1" else None
+        if self.game_mode == "1v1":
+            reset_ai()
+
         self.game_mode = saved_mode
         self._setup()
         self.game_mode = saved_mode

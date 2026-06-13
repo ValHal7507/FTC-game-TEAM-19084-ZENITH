@@ -17,6 +17,7 @@ from game_logic import (
 )
 from input_handler import handle_input
 from input_handler_p2 import handle_input_p2
+from ai_controller import update_ai
 
 
 def _blit_scaled(canvas, screen):
@@ -119,6 +120,8 @@ def run_1v1(screen, canvas, clock, state):
             # P2 input (1v1 only, skip when AI-controlled)
             if state.robot2 is not None and state.p2_device != "ai":
                 handle_input_p2(state, dt, events)
+            elif state.robot2 is not None and state.p2_device == "ai":
+                update_ai(state, dt)
 
             update_turret_angle(state)
             if state.robot2 is not None:

@@ -494,10 +494,14 @@ def _launch_held(state, r=None, team=None):
         ))
 
 
-def _toggle_gate(state, r):
+def _toggle_gate(state, r, override_range=None):
     """Toggle the gate open if robot is close enough."""
     gt = state.gate_rect()
-    if dist((r.x, r.y), (gt.centerx, gt.centery)) < CONFIG["gate_range"]:
+
+    # Use the override if provided by AI, otherwise default to human config
+    check_range = override_range if override_range is not None else CONFIG["gate_range"]
+
+    if dist((r.x, r.y), (gt.centerx, gt.centery)) < check_range:
         team = state.team2 if (state.robot2 is not None and r is state.robot2) else state.team
         if not team.gate_open:
             with _physics_lock:
@@ -508,8 +512,8 @@ def _toggle_gate(state, r):
                 for c in cleared:
                     tx, ty = random.choice(positions)
                     a = Artifact(tx, ty, c,
-                        vx=random.uniform(-40, 40), vy=random.uniform(-40, 40),
-                        zone="alliance", index=0)
+                                 vx=random.uniform(-40, 40), vy=random.uniform(-40, 40),
+                                 zone="alliance", index=0)
                     state.artifacts.append(a)
 
 

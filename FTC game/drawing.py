@@ -222,11 +222,15 @@ def draw_field(screen, state):
 
     # --- Gate state ---
     gt = state.gate_rect()
-    gc = GATE_OPEN_COLOR if state.team.gate_open else GATE_COLOR
+    team2 = state.team2
+    gate_open = state.team.gate_open
+    if state.game_mode == "1v1" and team2 is not None:
+        gate_open = state.team.gate_open or team2.gate_open
+    gc = GATE_OPEN_COLOR if gate_open else GATE_COLOR
     pygame.draw.rect(screen, gc, gt, border_radius=2)
     pygame.draw.rect(screen, WHITE, gt, 1, border_radius=2)
-    gl = "OPEN" if state.team.gate_open else "GATE"
-    gc2 = GATE_OPEN_COLOR if state.team.gate_open else GOLD
+    gl = "OPEN" if gate_open else "GATE"
+    gc2 = GATE_OPEN_COLOR if gate_open else GOLD
     lbl = f_tiny.render(gl, True, gc2)
     screen.blit(lbl, (gt.centerx - lbl.get_width() // 2, gt.y - 13))
 
@@ -508,8 +512,12 @@ def _draw_hud_1v1(screen, state):
     y += 6
 
     # ── Shared gate (between P1 and P2) ─────────────────────────────────────
-    gtxt = "GATE: OPEN" if state.team.gate_open else "GATE: CLOSED"
-    gc = GATE_OPEN_COLOR if state.team.gate_open else GATE_COLOR
+    team2 = state.team2
+    gate_open = state.team.gate_open
+    if state.game_mode == "1v1" and team2 is not None:
+        gate_open = state.team.gate_open or team2.gate_open
+    gtxt = "GATE: OPEN" if gate_open else "GATE: CLOSED"
+    gc = GATE_OPEN_COLOR if gate_open else GATE_COLOR
     lbl = f_tiny.render(gtxt, True, gc)
     screen.blit(lbl, (HX + 18, y))
     y += f_tiny.get_height() + 6
@@ -762,6 +770,7 @@ def _draw_hud_solo(screen, state):
     y += 10
 
     team = state.team
+    team2 = state.team2
     lbl = f_hud_s.render("SCORE", True, SOFT_WHITE)
     screen.blit(lbl, (HX + 18, y))
     y += f_hud_s.get_height() + 6
@@ -799,8 +808,12 @@ def _draw_hud_solo(screen, state):
         pygame.draw.rect(screen, SLOT_BORDER, sr, 1, border_radius=3)
     y += slot_sz + 14
 
-    gc = GATE_OPEN_COLOR if team.gate_open else GATE_COLOR
-    gtxt = "GATE: OPEN" if team.gate_open else "GATE: CLOSED"
+    # Gate status
+    gate_open = team.gate_open
+    if state.game_mode == "1v1" and team2 is not None:
+        gate_open = team.gate_open or team2.gate_open
+    gc = GATE_OPEN_COLOR if gate_open else GATE_COLOR
+    gtxt = "GATE: OPEN" if gate_open else "GATE: CLOSED"
     lbl = f_small.render(gtxt, True, gc)
     screen.blit(lbl, (HX + 18, y))
     y += f_small.get_height() + 12
