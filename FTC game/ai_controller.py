@@ -497,66 +497,91 @@ def _move_toward(r, tx, ty, speed, dt, obs_rect=None, profile=None):
         r.vy = 0.0
         return True
 
+    # Default direct velocity toward target
     r.vx = (dx / d) * speed
     r.vy = (dy / d) * speed
 
     if obs_rect is not None:
         half = CONFIG["robot_size"] // 2
 
-        # The core physical boundary (actual goal post footprint)
-        core_obs = pygame.Rect(obs_rect.left, obs_rect.top, obs_rect.w, obs_rect.h)
-
-        # The hard boundary padded by the robot's radius
+        # hard_obs: The absolute physical boundary where the robot's CENTER cannot go
         hard_obs = pygame.Rect(obs_rect.left - half, obs_rect.top - half,
                                obs_rect.w + 2 * half, obs_rect.h + 2 * half)
 
-        # If the direct path hits the core obstacle, we MUST route around.
-        # Using core_obs instead of the expanded rect allows the robot to dive into
-        # the buffer zone to grab artifacts right next to the wall!
-        if _line_crosses_rect(r.x, r.y, tx, ty, core_obs):
+        # 1. Clamp target destination if it sits inside the wall's radius.
+        ctx, cty = tx, ty
+        if hard_obs.collidepoint(tx, ty):
+            dl = tx - hard_obs.left
+            dr = hard_obs.right - tx
+            dt_top = ty - hard_obs.top
+            db = hard_obs.bottom - ty
+            min_d = min(dl, dr, dt_top, db)
 
-            clearance = 20
-            obs_left = hard_obs.left - clearance
-            obs_right = hard_obs.right + clearance
-            obs_bottom = hard_obs.bottom + clearance
-
-            safe_x, safe_y = tx, ty
-
-            on_left = r.x < obs_rect.centerx
-            target_on_left = tx < obs_rect.centerx
-
-            if on_left:
-                if target_on_left:
-                    # Both on left, but line crosses core (hugging corner too tight)
-                    safe_x, safe_y = obs_left, r.y
-                    if r.y < obs_bottom and ty > obs_bottom:
-                        safe_y = obs_bottom
-                else:
-                    # Crossing from left to right
-                    if r.y < obs_bottom - 5:
-                        safe_x, safe_y = obs_left, obs_bottom
-                    elif r.x < obs_right - 5:
-                        safe_x, safe_y = obs_right, obs_bottom
+            if min_d == dl:
+                ctx = hard_obs.left
+            elif min_d == dr:
+                ctx = hard_obs.right
+            elif min_d == dt_top:
+                cty = hard_obs.top
             else:
-                # On right side
-                if not target_on_left:
-                    # Both on right
-                    safe_x, safe_y = obs_right, r.y
-                    if r.y < obs_bottom and ty > obs_bottom:
-                        safe_y = obs_bottom
-                else:
-                    # Crossing from right to left
-                    if r.y < obs_bottom - 5:
-                        safe_x, safe_y = obs_right, obs_bottom
-                    elif r.x > obs_left + 5:
-                        safe_x, safe_y = obs_left, obs_bottom
+                cty = hard_obs.bottom
 
-            # Calculate movement towards the safe waypoint
+        # 2. Check if the direct line to the clamped target clips the obstacle.
+        # Shrink by 2px to allow sliding exactly on the edge without panicking.
+        check_obs = pygame.Rect(hard_obs.left + 2, hard_obs.top + 2,
+                                hard_obs.w - 4, hard_obs.h - 4)
+
+        override_velocity = False
+        safe_x, safe_y = ctx, cty
+
+        if _line_crosses_rect(r.x, r.y, ctx, cty, check_obs):
+            # We are going to snag the corner. Force an orthogonal route.
+            clearance = 20
+            safe_left = hard_obs.left - clearance
+            safe_right = hard_obs.right + clearance
+            safe_bottom = hard_obs.bottom + clearance
+
+            target_is_left = ctx < obs_rect.centerx
+            robot_is_left = r.x < obs_rect.centerx
+
+            if target_is_left != robot_is_left:
+                # CROSSING SIDES: The top is blocked by the arena wall.
+                # We MUST route in a U-Shape underneath the obstacle.
+                if r.y < safe_bottom - 5:
+                    # Move straight down your current side until clear of the bottom
+                    safe_x = safe_left if robot_is_left else safe_right
+                    safe_y = safe_bottom
+                    override_velocity = True
+                else:
+                    # Clear of the bottom! Now cross horizontally to the target's side
+                    safe_x = safe_left if target_is_left else safe_right
+                    safe_y = safe_bottom
+                    override_velocity = True
+            else:
+                # SAME SIDE: We are just snagging the corner while reaching for a close artifact.
+                if r.y < safe_bottom - 5 and cty > safe_bottom:
+                    # Moving vertically down past the corner
+                    safe_x = safe_left if robot_is_left else safe_right
+                    safe_y = safe_bottom
+                    override_velocity = True
+                elif r.y > safe_bottom - 5 and cty < safe_bottom:
+                    # Moving vertically up from below the corner
+                    safe_x = safe_left if robot_is_left else safe_right
+                    safe_y = safe_bottom
+                    override_velocity = True
+                else:
+                    # Both are above safe_bottom, or both are below safe_bottom.
+                    # Pull away from the wall horizontally to stop scraping.
+                    safe_x = safe_left if robot_is_left else safe_right
+                    safe_y = r.y
+                    override_velocity = True
+
+        # Apply override velocity if we are navigating around a corner
+        if override_velocity:
             sdx = safe_x - r.x
             sdy = safe_y - r.y
             sd = math.hypot(sdx, sdy)
-
-            # Only override velocity if we haven't reached the waypoint
+            # Only override if we aren't already at the safe waypoint
             if sd > 2.0:
                 r.vx = (sdx / sd) * speed
                 r.vy = (sdy / sd) * speed
