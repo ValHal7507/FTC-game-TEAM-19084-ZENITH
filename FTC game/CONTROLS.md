@@ -243,18 +243,26 @@ Din meniul de pauza, selecteaza **Options** pentru a personaliza tastele si buto
 - **Ambii jucatori pot pune pauza** prin `ESC`
 - La sfarsitul meciului, castigatorul este anuntat (P1 WINS / P2 WINS / TIE)
 - La selectarea modului 1v1, ambii jucator isi aleg dispozitivul de control (Gamepad 1 sau Gamepad 2)
+- **Asignarea implicita a controlerelor** (la intrarea in ecranul de asignare):
+  - 2+ controlere detectate → P1 = Gamepad 1, P2 = Gamepad 2
+  - 1 controler detectat → P1 = Gamepad 1, P2 = AI
+  - 0 controlere detectate → P1 = Gamepad 1 (neidentificat), P2 = AI
+  - Utilizatorul poate schimba selectiile folosind sagetile
 - **Tastele nu pot fi personalizate in 1v1** — meniul Options este ascuns si tastele raman la valorile implicite pe toata durata meciului
 
 ### vs AI (prin modul 1v1)
 
 - Un jucator (P1) contra unui robot controlat de calculator (P2)
-- La selectarea modului 1v1, P2 alege **AI** in loc de Gamepad
+- La selectarea modului 1v1, daca este detectat un singur controler, P2 este setat automat pe **AI** (asignare implicita). P2 poate alege, de asemenea, AI manual in ecranul de asignare a controlerelor
 - **Robotii se ciocnesc intre ei** — daca cei doi roboti se suprapun, sunt impinsi automat (la fel ca in 1v1)
-- AI-ul foloseste o strategie bazata pe reguli:
-  1. **Protectie supraincalzire** — opreste intake-ul daca e supraincalzit
-  2. **Colectare** — cauta cel mai apropiat artefact (in raza de 300px) si se indreapta spre el
-  3. **Lansare** — daca detine artefacte si se afla in zona de lansare, le lanseaza spre gol
-  4. **Navigare** — daca detine artefacte dar nu e in zona de lansare, se indreapta spre zona de incarcare
-  5. **Asteptare** — daca nu sunt artefacte disponibile, mentine intake-ul pornit si asteapta
+- AI-ul foloseste o strategie bazata pe reguli cu 5 stari:
+  1. **Colectare** — cauta cel mai apropiat artefact si se indreapta spre el cu intake-ul pornit
+  2. **Navigare** — daca detine suficiente artefacte, se indreapta spre cea mai apropiata zona de lansare
+  3. **Lansare** — daca se afla in zona de lansare, lanseaza toate artefactele detinute
+  4. **Parcare** — in ultimele 5 secunde, se indreapta spre zona de baza pentru puncte bonus
+  5. **Poarta** — daca rampa are artefacte si poarta e inchisa, se apropie de poarta si o deschide pentru a recicla artefactele
+- AI-ul are **protectie supraincalzire** — opreste intake-ul cand e supraincalzit
+- AI-ul **evita obstacolele** — ruta inconjoara automat zona gol+depot
+- AI-ul se **deblocheaza singur** — daca robotul ramane blocat, incearca directii alternative pentru a iesi
 
-> **⚠ Nota:** Modul vs AI este temporar dezactivat. Codul AI exista in `ai_controller.py` dar nu este conectat in `mode_1v1.py`. Cand P2 este setat pe AI, robotul P2 ramane nemiscat.
+> **Nota:** Modul vs AI este activ. Codul AI exista in `ai_controller.py` si este conectat in `mode_1v1.py`. Cand P2 este setat pe AI, robotul P2 este controlat de inteligenta artificiala.

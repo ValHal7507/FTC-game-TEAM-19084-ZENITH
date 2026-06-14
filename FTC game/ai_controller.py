@@ -483,10 +483,12 @@ def _move_toward(r, tx, ty, speed, dt, obs_rect=None, profile=None):
     dx = tx - r.x
     dy = ty - r.y
     d = math.hypot(dx, dy)
+
     if d < 8.0:
         r.vx = 0.0
         r.vy = 0.0
         return True
+
     move = speed * dt
     if move >= d:
         r.x = tx
@@ -494,67 +496,70 @@ def _move_toward(r, tx, ty, speed, dt, obs_rect=None, profile=None):
         r.vx = 0.0
         r.vy = 0.0
         return True
+
     r.vx = (dx / d) * speed
     r.vy = (dy / d) * speed
 
     if obs_rect is not None:
         half = CONFIG["robot_size"] // 2
 
-        # Keep a fair distance from the bottom of the obstacle to prevent scratching
-        fair_dist = 40
-        below_y = obs_rect.bottom + half + fair_dist
+        # The core physical boundary (actual goal post footprint)
+        core_obs = pygame.Rect(obs_rect.left, obs_rect.top, obs_rect.w, obs_rect.h)
 
-        # Expanded rect to detect if we need to route around
-        expanded = pygame.Rect(obs_rect.left - half - 15,
-                               obs_rect.top - half - 15,
-                               obs_rect.w + 2 * half + 30,
-                               obs_rect.h + 2 * half + fair_dist + 15)
+        # The hard boundary padded by the robot's radius
+        hard_obs = pygame.Rect(obs_rect.left - half, obs_rect.top - half,
+                               obs_rect.w + 2 * half, obs_rect.h + 2 * half)
 
-        if _line_crosses_rect(r.x, r.y, tx, ty, expanded):
-            obs_left = obs_rect.left - half - 15
-            obs_right = obs_rect.right + half + 15
+        # If the direct path hits the core obstacle, we MUST route around.
+        # Using core_obs instead of the expanded rect allows the robot to dive into
+        # the buffer zone to grab artifacts right next to the wall!
+        if _line_crosses_rect(r.x, r.y, tx, ty, core_obs):
 
-            # The obstacle is attached to the top wall. We must route under it safely.
-            if r.y < below_y - 2:
-                if obs_left < r.x < obs_right:
-                    # Caught directly below the horizontal span: move straight down
-                    r.vx = 0.0
-                    r.vy = speed
+            clearance = 20
+            obs_left = hard_obs.left - clearance
+            obs_right = hard_obs.right + clearance
+            obs_bottom = hard_obs.bottom + clearance
+
+            safe_x, safe_y = tx, ty
+
+            on_left = r.x < obs_rect.centerx
+            target_on_left = tx < obs_rect.centerx
+
+            if on_left:
+                if target_on_left:
+                    # Both on left, but line crosses core (hugging corner too tight)
+                    safe_x, safe_y = obs_left, r.y
+                    if r.y < obs_bottom and ty > obs_bottom:
+                        safe_y = obs_bottom
                 else:
-                    # On the outside, move down and towards the safe crossing corner
-                    side_x = obs_left if r.x <= obs_left else obs_right
-                    sdx = side_x - r.x
-                    sdy = below_y - r.y
-                    sd = math.hypot(sdx, sdy)
-                    if sd > 1.0:
-                        r.vx = (sdx / sd) * speed
-                        r.vy = (sdy / sd) * speed
+                    # Crossing from left to right
+                    if r.y < obs_bottom - 5:
+                        safe_x, safe_y = obs_left, obs_bottom
+                    elif r.x < obs_right - 5:
+                        safe_x, safe_y = obs_right, obs_bottom
             else:
-                # We are below the safe crossing line.
-                cross_left = tx < obs_left
-                cross_right = tx > obs_right
-
-                if (cross_left and r.x > obs_left) or (cross_right and r.x < obs_right):
-                    # Moving horizontally across the gap
-                    target_x = obs_right if cross_right else obs_left
-                    sdx = target_x - r.x
-                    sdy = below_y - r.y
-                    sd = math.hypot(sdx, sdy)
-                    if sd > 1.0:
-                        r.vx = (sdx / sd) * speed
-                        r.vy = (sdy / sd) * speed
+                # On right side
+                if not target_on_left:
+                    # Both on right
+                    safe_x, safe_y = obs_right, r.y
+                    if r.y < obs_bottom and ty > obs_bottom:
+                        safe_y = obs_bottom
                 else:
-                    # Cleared the width, proceed diagonally to target
-                    sdx = tx - r.x
-                    sdy = ty - r.y
-                    sd = math.hypot(sdx, sdy)
-                    if sd > 1.0:
-                        r.vx = (sdx / sd) * speed
-                        r.vy = (sdy / sd) * speed
-                    else:
-                        r.vx = 0.0
-                        r.vy = 0.0
-                        return True
+                    # Crossing from right to left
+                    if r.y < obs_bottom - 5:
+                        safe_x, safe_y = obs_right, obs_bottom
+                    elif r.x > obs_left + 5:
+                        safe_x, safe_y = obs_left, obs_bottom
+
+            # Calculate movement towards the safe waypoint
+            sdx = safe_x - r.x
+            sdy = safe_y - r.y
+            sd = math.hypot(sdx, sdy)
+
+            # Only override velocity if we haven't reached the waypoint
+            if sd > 2.0:
+                r.vx = (sdx / sd) * speed
+                r.vy = (sdy / sd) * speed
 
     r.x += r.vx * dt
     r.y += r.vy * dt

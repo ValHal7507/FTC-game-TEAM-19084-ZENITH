@@ -76,6 +76,13 @@ def main():
                         app_screen = "game"
                     elif result == "1v1":
                         chosen_mode = "1v1"
+                        num_joy = pygame.joystick.get_count()
+                        if num_joy >= 2:
+                            ca_p1 = 0  # Gamepad 1
+                            ca_p2 = 1  # Gamepad 2
+                        else:
+                            ca_p1 = 0  # Gamepad 1
+                            ca_p2 = 2  # AI
                         app_screen = "controller_assign"
 
                 elif app_screen == "controller_assign":

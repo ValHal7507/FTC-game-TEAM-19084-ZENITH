@@ -24,7 +24,7 @@ FTC game/
 │
 ├── input_handler.py     # [SHARED] P1 input, pause/start/reset controls, public aliases
 ├── input_handler_p2.py  # [MP ONLY] P2 input handling
-├── ai_controller.py     # [1v1 ONLY] AI logic for P2 robot (used when P2 is assigned AI) — NOT currently wired into mode_1v1.py (vs AI temporarily disabled)
+├── ai_controller.py     # [1v1 ONLY] AI logic for P2 robot (used when P2 is assigned AI) — wired into mode_1v1.py (vs AI now functional)
 │
 ├── keybinds.json        # Saved custom keybinds (P1, created on first rebinding, loaded on startup; skipped in 1v1)
 ├── keybinds_p2.json     # Saved custom keybinds (P2, created on first rebinding; skipped in 1v1)
@@ -53,7 +53,7 @@ No external dependencies beyond Python stdlib and `pygame`.
 - Creates a fixed-size **virtual canvas** (`1050 × 778`) that all drawing targets
 - **App-level screen routing**: Three top-level screens — Mode Select, Controller Assign, Game Loop. `app_screen` variable (`"mode_select"`, `"controller_assign"`, `"game"`) controls which loop runs.
 - **Mode-select mini-loop**: Runs before any match. User picks Solo or 1v1. On Solo, creates `GameState` and enters game directly. On 1v1, proceeds to controller-assign screen.
-- **Controller-assign screen**: P1 picks gamepad (Gamepad 1 or Gamepad 2). P2 picks gamepad (Gamepad 1 or Gamepad 2) or AI. Same gamepad ID is blocked.
+- **Controller-assign screen**: Defaults are set automatically based on detected gamepads: 2+ gamepads → P1 = Gamepad 1, P2 = Gamepad 2; 1 gamepad → P1 = Gamepad 1, P2 = AI; 0 gamepads → P1 = Gamepad 1 (not found), P2 = AI. User can change selections. P1 picks Gamepad 1 or Gamepad 2. P2 picks Gamepad 1, Gamepad 2, or AI. Same gamepad ID is blocked.
 - **Dispatcher**: After menu selection, dispatches to `mode_solo.run_solo()` or `mode_1v1.run_1v1()`. Each mode file owns its full frame loop and physics thread lifecycle.
 - Uses `clock.tick_busy_loop(fps)` for precise frame pacing
 - Calls `init_drawing()` after `pygame.init()` to initialize fonts (must happen after pygame init)
@@ -86,7 +86,7 @@ No external dependencies beyond Python stdlib and `pygame`.
 - Owns the full 1v1 match frame loop
 - Exposes `run_1v1(screen, canvas, clock, state) -> str` returning `"menu"` or `"quit"`
 - Same frame structure as `mode_solo.py` but adds P2 logic:
-  - After P1 input: `handle_input_p2(state, dt, events)` — if `state.p2_device == "ai"`, P2 input is skipped (robot does nothing; AI is NOT currently wired)
+   - After P1 input: `handle_input_p2(state, dt, events)` — if `state.p2_device == "ai"`, P2 input is skipped (robot does nothing; AI IS now wired)
   - After P1 turret: `update_turret_angle_r(state, state.robot2)` — P2 turret
   - Inside lock: `draw_field_1v1_extras()`, `draw_robot2()` for P2 rendering
 - `draw_match_end` handles side-by-side 1v1 scores internally
@@ -101,7 +101,7 @@ No external dependencies beyond Python stdlib and `pygame`.
 ### `menu.py` — Mode-Select and Controller-Assign Screens
 
 - **`draw_mode_select(screen, selected_index)`**: Renders the mode-select overlay with buttons. Navigation via Up/Down arrows or Numpad 8/2. Selection via Enter/Space.
-  - Modes: `"SOLO PRACTICE"` and `"1v1 LOCAL"` (vs AI temporarily disabled)
+   - Modes: `"SOLO PRACTICE"` and `"1v1 LOCAL"` (vs AI now functional)
   - ZENITH branding and team tagline displayed
 - **`handle_mode_select(events, keys, selected_index)`**: Returns `(new_selected_index, chosen_mode | None)`. Chosen mode is `"solo"` or `"1v1"`.
 - **`draw_controller_assign(screen, selected_p1, selected_p2, num_joysticks, conflict, game_mode)`**: Two-column screen for 1v1 mode:
@@ -215,7 +215,7 @@ No external dependencies beyond Python stdlib and `pygame`.
 **Derived layout constants** (computed from CONFIG):
 | Constant | Value | Meaning |
 |---|---|---|
-| `VW`, `VH` | 1050, 778 | Virtual canvas dimensions |
+| `VW`, `VH` | 1050, 778 | Virtual canvas dimensions (`VW` = field + margins + HUD; `VH` = field + margin + 5 + 48) |
 | `FX`, `FY` | 5, 5 | Field top-left corner on canvas |
 | `FS` | 720 | Field size (alias for `field_size_px`) |
 | `HX`, `HW` | 730, 320 | HUD panel left edge and width |
@@ -298,10 +298,12 @@ No external dependencies beyond Python stdlib and `pygame`.
 | `vy` | `float` | `0.0` | Velocity from input |
 | `drive_mode` | `str` | `"field"` | `"robot"` or `"field"` |
 | `holding` | `List[Artifact]` | `[]` | Artifacts being carried (max 3) |
-| `start_x` | `float` | `0.0` | Initial position (set from constructor args) |
-| `start_y` | `float` | `0.0` | Initial position |
+| `start_x` | `float` | `0.0` | Initial position (set from `x` via `__post_init__`) |
+| `start_y` | `float` | `0.0` | Initial position (set from `y` via `__post_init__`) |
 | `alliance` | `str` | `"neutral"` | `"neutral"` (solo), `"blue"` (P1 in 1v1), or `"red"` (P2 in 1v1) |
 | `can_pickup()` | method | — | Returns `True` if `len(holding) < CONFIG["max_hold"]` |
+
+**`__post_init__`:** Sets `start_x = x` and `start_y = y` from the constructor position args.
 
 #### `TeamState`
 | Field | Type | Default | Description |
@@ -366,7 +368,7 @@ No external dependencies beyond Python stdlib and `pygame`.
 | Method | Signature | Behavior |
 |---|---|---|
 | `_setup()` | `()` | Shared init logic called by `__init__` and `reset()`. Creates artifacts, rebuilds obstacle cache. In 1v1, skips loading keybinds JSON. |
-| `reset()` | `()` | Saves `game_mode`, `p1_device`, `p2_device`, calls `_setup()`, restores them. In 1v1, skips saving/restoring keybinds_p2. |
+| `reset()` | `()` | Saves `game_mode`, `p1_device`, `p2_device`, calls `_setup()`, restores them. In 1v1, skips saving/restoring keybinds_p2. Imports and calls `reset_ai()` when in 1v1 mode to reset AI state. |
 | `_init_artifacts()` | `()` | Creates 18 base artifacts: 9 spike-mark (1 col × 3 rows), 3 loading-zone (PGP), 6 alliance-area (4P+2G random) |
 | `_add_1v1_artifacts()` | `()` | Adds 18 mirrored artifacts for P2's side (1v1 only) |
 | `goal_rect()` | `-> pygame.Rect` | Goal rectangle |
@@ -434,7 +436,7 @@ Three independent caches improve rendering performance:
 | `draw_hud()` | `drawing.py` | Routes to `_draw_hud_solo()` (solo) or `_draw_hud_1v1()` (1v1) based on `state.game_mode`. |
 | `_draw_hud_solo()` | `drawing.py` | Solo-only HUD: dark panel on right side, team branding header, phase label, STOPPED/PAUSED badge, countdown timer (muted gray when paused), motif circles, launch zone indicator (✓/✗), intake status (ON/OFF/COOLDOWN) with color-interpolated heat bar (green→yellow→orange→red) and cooldown timer, score breakdown, 9-slot ramp display, gate state, parking status 3-segment bar with status label |
 | `_draw_hud_1v1()` | `drawing.py` | Split HUD for 1v1: shared gate display (once, between P1/P2 sections), then two vertically stacked panels using `_draw_player_hud_section` helper. P1 panel (BLUE) drawn first, P2 panel (RED) continues directly below. Winner indicator at match end. |
-| `_draw_player_hud_section()` | `drawing.py` | Shared helper for compact single-player HUD section. Takes `in_zone` parameter. Renders: zone indicator, intake status, color-interpolated heat bar with cooldown timer text, score breakdown, 9-slot ramp, parking status 3-segment bar. Returns final `y` position for stacking. |
+| `_draw_player_hud_section()` | `drawing.py` | Shared helper for compact single-player HUD section. Signature: `(screen, team, robot, park_status, intake_active, intake_heat, intake_overheated, intake_cooldown_timer, state, y, accent_color, in_zone=False)`. Renders: zone indicator, intake status, heat bar, score, ramp, parking. Returns final `y` for stacking. |
 | `draw_match_end()` | `drawing.py` | Cached semi-transparent overlay with "MATCH OVER", team branding, final score. In solo: single score breakdown. In 1v1: side-by-side scores, winner label ("P1 WINS" / "P2 WINS" / "TIE"), each player's breakdown, interactive Restart/Exit buttons. |
 | `draw_match_end_buttons()` | `drawing.py` | Renders highlight on top of already-blitted match-end overlay buttons. |
 | `draw_pause_menu()` | `drawing.py` | Semi-transparent overlay with centered panel containing selectable buttons: Resume, Restart Game, Detect Gamepads, Options (hidden in 1v1), Mode Select, Quit. In 1v1 mode, only 5 buttons are shown (Options omitted). Highlighted button shown with lavender border (ZENITH_ACCENT). Navigation hint at bottom. Subtle ZENITH watermark at panel bottom. |
@@ -471,8 +473,8 @@ from game_logic_p2 import (
 | `update_timer(state, dt)` | `game_logic.py` | Decrements timer only if `timer_running`; at 20s switches to `ENDGAME`; at 0s triggers scoring (P1 + P2 separately in 1v1), sets `FINISHED`, sets `timer_running = False`, and clears both robots' velocity |
 | `score_pattern(state)` | `game_logic.py` | Each ramp slot matching `motif[i % 3]` → +2 points (P1's ramp) |
 | `score_pattern2(state)` | `game_logic_p2.py` | Same as `score_pattern` but for P2's ramp and motif |
-| `score_base(state)` | `game_logic.py` | Robot fully inside base → 10 pts, partial → 5 pts (P1) |
-| `score_base2(state)` | `game_logic_p2.py` | Robot fully inside P2's base → 10 pts, partial → 5 pts (P2, 1v1 only) |
+| `score_base(state)` | `game_logic.py` | Robot fully inside base → 10 pts, partial → 5 pts (P1). Computes robot rect and checks `base_rect().contains()` / `colliderect()` directly. |
+| `score_base2(state)` | `game_logic_p2.py` | Robot fully inside P2's base → 10 pts, partial → 5 pts (P2, 1v1 only). Reads pre-computed `state.park_status2` (does NOT check robot position directly). |
 | `update_artifact_physics(state, dt)` | `game_logic.py` | 2D physics with early-exit optimization: velocity integration, exponential friction, field-wall bounce with restitution, goal+depot merged-obstacle containment push-out + bounce, artifact–artifact collision resolution, robot–artifact push with restitution + extra push force. Uses cached obstacle rect and local variable aliases for performance. |
 | `constrain_robot(state)` | `game_logic.py` | Pushes P1 robot out of cached obstacle rect (iterative resolve, capped at `_CONSTRAIN_MAX_ITER = 8` iterations) |
 | `constrain_robot_r(state, robot)` | `game_logic_p2.py` | Pushes any robot (P1 or P2) out of cached obstacle rect. Used for P2 in 1v1 mode. |
@@ -549,10 +551,10 @@ Processes all Pygame events once per frame. Supports keyboard and gamepad simult
 | `_handle_field_drive(r, keys, dt, state)` | Process WASD movement in field-oriented mode |
 | `_handle_robot_drive(r, keys, dt, state)` | Process WASD movement in robot-oriented mode |
 | `_launch_held(state, r, team=None)` | Launch all held artifacts toward the goal. Optional `team` arg for P2 launching. |
-| `_toggle_gate(state, r)` | Toggle gate open if robot is within gate_range. Acquires `_physics_lock` internally to serialize with physics thread. |
+| `_toggle_gate(state, r, override_range=None)` | Toggle gate open if robot is within gate_range. Optional `override_range` parameter used by AI to specify custom interaction range. Acquires `_physics_lock` internally to serialize with physics thread. |
 | `_try_pickup(state, r, in_front)` | Attempt to pick up nearest artifact in front cone |
 | `_handle_gamepad(state, r, joy, events, dt, in_front)` | Process gamepad stick, trigger, and button input |
-| `_execute_pause_action(state, index)` | Execute selected pause menu action (Resume/Restart Game/Detect Gamepads/Options/Mode Select/Quit) |
+| `_execute_pause_action(state, index)` | Execute selected pause menu action (Resume/Restart Game/Detect Gamepads/Options/Mode Select/Quit). In 1v1 mode, indices ≥ 3 are remapped (+1) to skip the hidden Options button. |
 
 **Return value:**
 - `handle_input(state, dt, events=None)` returns `True` if a reset was requested (F5 / gamepad Back); `None` otherwise. The caller performs the actual reset under the physics lock. Accepts optional `events` list (mode files collect events once per frame and pass them in to avoid double-collection).
@@ -599,7 +601,7 @@ Processes all Pygame events once per frame. Supports keyboard and gamepad simult
 | `D` | Strafe right (robot mode) / World right (field mode) |
 | `←` | Rotate left |
 | `→` | Rotate right |
-| `E` | Toggle intake on/off (when on, continuously picks up artifacts in front cone; blocked when overheated) |
+| `E` | Hold to intake (continuously picks up artifacts in front cone while held; blocked when overheated) |
 | `Q` | Launch ALL held artifacts toward goal (any number) |
 | `T` | Toggle gate open (must be within gate_range of gate) |
 | `R` | Toggle drive mode (`robot` ↔ `field`) |
@@ -680,6 +682,7 @@ Processes all Pygame events once per frame. Supports keyboard and gamepad simult
 - **Quit** exits the application
 - Navigation via keyboard arrows; selection via Enter/Space
 - **Mode Select** sets `state.pending_return = "menu"`; mode files check this at the top of each frame loop and return to the mode-select screen
+- In 1v1 mode, the pause menu index is remapped (indices ≥ 3 incremented by 1) to skip the hidden Options button
 
 ---
 
@@ -744,23 +747,80 @@ Processes all Pygame events once per frame. Supports keyboard and gamepad simult
 
 ### `ai_controller.py` — AI Logic (1v1 Only, for AI-controlled P2)
 
-**Functions:**
+**Difficulty profiles** (`DIFFICULTIES` dict):
+| Parameter | Easy | Medium | Hard | Purpose |
+|---|---|---|---|---|
+| `speed_mult` | 0.50 | 0.85 | 1.00 | Robot movement speed multiplier |
+| `aim_error` | 15.0° | 2.0° | 0.0° | Random turret aim offset (degrees) |
+| `radius` | 200 | 350 | 500 | Artifact search radius (px) |
+| `reaction` | 0.40s | 0.08s | 0.00s | FSM state transition delay |
+| `parks` | False | True | True | Whether AI parks at endgame |
+| `launch_hold_threshold` | 3 | 3 | 3 | Artifacts held before navigating to launch |
+| `gate_range` | 100 | 100 | 100 | Distance to interact with gate |
+| `safe_corridor` | 80 | 80 | 80 | Safety margin for obstacle routing |
+
+**Module-level state:**
+- `_ai_state` — current FSM state: `"COLLECT"`, `"NAVIGATE"`, `"LAUNCH"`, `"PARK"`, or `"GATE"`
+- `_reaction_timer` — countdown for FSM state transition delay
+- `_difficulty` — active difficulty key (`"easy"`, `"medium"`, `"hard"`)
+- `_aim_offset` — random turret aim error (radians), refreshed every 0.5–1.5s
+- `_aim_refresh_timer` — countdown to next aim offset refresh
+
+**Unstuck system:**
+- `_pos_history` — recent robot positions (capped at 90 entries)
+- `_stuck` — whether robot is currently stuck
+- `_stuck_dir_idx` / `_stuck_dir_timer` — which direction to try and for how long
+- `_STUCK_THRESHOLD = 0.8s` — time window to detect no movement
+- `_STUCK_MOVE_MIN = 10.0` — minimum distance to consider "moved"
+- `_STUCK_DIR_DUR = 0.3s` — duration to try each escape direction
+- `_STUCK_DIRS` — 8 directions (cardinal + diagonal) to try when stuck
+- When stuck: robot cycles through escape directions, avoiding the obstacle rect
+
+**Obstacle routing:**
+- `_routing_side` / `_routing_side_lock` — tracks which side of the obstacle to route around
+- `_CORNER_HYSTERESIS = 30.0` / `_CORNER_EXTRA = 25.0` — corner routing parameters
+- `_move_toward()` handles obstacle avoidance: detects if the path crosses the expanded obstacle rect, routes under it via safe corridor
+
+**FSM states:**
+| State | Behavior |
+|---|---|
+| `COLLECT` | Drive toward nearest artifact (within radius), intake on. If holding ≥ threshold → NAVIGATE. If no artifacts and holding ≥ 1 → NAVIGATE. If ramp has items and gate closed → GATE. |
+| `NAVIGATE` | Drive toward nearest launch point (base zone, launch zone triangle, or shooting zone). On arrival → LAUNCH. |
+| `LAUNCH` | If in launch zone and holding artifacts → launch all held. If not in launch zone → NAVIGATE. |
+| `PARK` | Drive toward P2's base zone. If holding artifacts and in launch zone → launch first. If fully parked → stop. Forced in last 5 seconds. |
+| `GATE` | Approach gate from the right side of the obstacle. When in range → toggle gate → COLLECT. |
+
+**Endgame override:** In the last 5 seconds, AI forces `PARK` state regardless of current state.
+
+**Public API:**
+| Function | Signature | Behavior |
+|---|---|---|
+| `set_difficulty(difficulty)` | `(str)` | Set AI difficulty. Invalid values default to `"medium"`. Resets all AI state. |
+| `reset_ai()` | `()` | Reset all AI module state (called by `GameState.reset()`). |
+| `update_ai(state, dt)` | `(GameState, float)` | Main AI update. Drives `state.robot2` based on active FSM state and difficulty profile. |
+
+**Helper functions:**
 | Function | Responsibility |
 |---|---|
-| `update_ai(state, dt)` | Main AI update function. Simple rule-based bot controlling `state.robot2`. |
+| `_state_collect(state, r, dt, profile)` | COLLECT state logic |
+| `_state_navigate(state, r, dt, profile)` | NAVIGATE state logic |
+| `_state_launch(state, r, dt, profile)` | LAUNCH state logic |
+| `_state_park(state, r, dt, profile)` | PARK state logic |
+| `_state_gate(state, r, dt, profile)` | GATE state logic |
+| `_stop_robot(r)` | Zero out robot velocity |
+| `_move_toward(r, tx, ty, speed, dt, obs_rect, profile)` | Move toward target with obstacle avoidance |
+| `_rotate_toward(r, tx, ty, dt)` | Rotate robot toward target angle (with aim offset) |
+| `_in_front_cone(r, tx, ty)` | Check if target is within pickup cone |
+| `_line_crosses_rect(x1, y1, x2, y2, rect)` | Check if line segment intersects rectangle |
+| `_nearest_launch_point(state, r)` | Find closest valid launch position |
+| `_point_in_triangle(pt, v1, v2, v3)` | Point-in-triangle test |
+| `_clamp_to_rect(px, py, rect)` | Clamp point to rectangle bounds |
 
-**AI priorities:**
-1. **Overheat guard**: If `intake_overheated2`, disable intake
-2. **Collect**: If holding < 3 and nearest artifact within 300px, drive toward it with intake on
-3. **Launch**: If holding ≥ 1 artifact and inside `in_launch_zone2`, launch all held artifacts; if ramp has items and gate closed, toggle gate
-4. **Navigate**: If holding ≥ 1 artifact but not in launch zone, drive toward P2's loading zone
-5. **Idle**: No artifacts reachable, keep intake on, stop moving
+**Dependencies:** Imports from `config` (clamp), `input_handler` (_launch_held, _toggle_gate, _try_pickup).
 
-**Dependencies:** Imports from `config` (clamp), `input_handler` (launch_held, toggle_gate, _try_pickup).
+**Note:** AI does NOT pause, reset, or open options. AI intake uses `state.intake_active2` / `state.intake_heat2` / `state.intake_overheated2`.
 
-**Note:** AI does NOT pause, reset, or open options.
-
-**⚠ Current status:** AI is NOT currently wired into `mode_1v1.py`. When `p2_device == "ai"`, the `handle_input_p2` call is skipped but `update_ai()` is never called. The P2 robot remains idle. vs AI mode is temporarily disabled.
+**Current status:** AI IS wired into `mode_1v1.py`. When `p2_device == "ai"`, `handle_input_p2` is skipped and `update_ai()` is called instead. vs AI mode is functional.
 
 ---
 
@@ -780,24 +840,28 @@ Processes all Pygame events once per frame. Supports keyboard and gamepad simult
 
 ### 1v1 Mode
 1. Game starts in **MODE SELECT** — user picks 1v1 Local
-2. **Controller-assign screen**: P1 picks Gamepad 1 or Gamepad 2. P2 picks Gamepad 1, Gamepad 2, or AI.
+2. **Controller-assign screen**: Defaults are set automatically based on detected gamepads (2+ gamepads → P1=Gamepad 1, P2=Gamepad 2; 1 gamepad → P1=Gamepad 1, P2=AI). User can change selections. P1 picks Gamepad 1 or Gamepad 2. P2 picks Gamepad 1, Gamepad 2, or AI.
 3. Match starts in **TELEOP** phase with 120 seconds on the clock, timer **STOPPED**
 4. Both robots appear on the field: P1 (blue alliance) at left-center facing right, P2 (red alliance) at right-center facing left
 5. 36 artifacts total: 18 base + 18 mirrored on P2's half of the field
 6. Both players share the same timer, phase transitions, and physics simulation
 7. Each player has independent: intake, heat, ramp, scoring, and park status
 8. Flying artifacts are tagged with `team` field (`"p1"` or `"p2"`) so scoring routes to the correct player
-9. If P2 is assigned AI, AI controller is **NOT currently active** (vs AI temporarily disabled)
+9. If P2 is assigned AI, AI controller IS now active (vs AI now functional)
 10. At match end: both scores shown side-by-side, winner announced ("P1 WINS" / "P2 WINS" / "TIE")
 11. **Restart** button resets the match (preserves `game_mode`, device assignments); **Exit** quits
 
 ### Controller-Assign Flow
-1. P1 picks: Gamepad 1 or Gamepad 2
-2. P2 picks: Gamepad 1, Gamepad 2, or AI
-3. Conflict check:
+1. When entering the controller-assign screen, **defaults are set automatically** based on detected gamepads:
+   - 2+ gamepads detected → P1 = Gamepad 1 (`"gamepad0"`), P2 = Gamepad 2 (`"gamepad1"`)
+   - 1 gamepad detected → P1 = Gamepad 1 (`"gamepad0"`), P2 = AI (`"ai"`)
+   - 0 gamepads detected → P1 = Gamepad 1 (not found), P2 = AI (`"ai"`)
+2. P1 can change to: Gamepad 1 or Gamepad 2
+3. P2 can change to: Gamepad 1, Gamepad 2, or AI
+4. Conflict check:
    - If P1 = gamepad and P2 = gamepad and same joystick ID → **blocked** (show warning)
    - Otherwise → accepted, both devices stored
-4. Device format: plain strings — `"gamepad0"`, `"gamepad1"`, or `"ai"` for AI
+5. Device format: plain strings — `"gamepad0"`, `"gamepad1"`, or `"ai"` for AI
 
 ---
 
@@ -814,11 +878,10 @@ Dispatcher:                               update_park_status()
   (each mode owns its own                 constrain_robot_r()      [1v1]
    frame loop and physics thread)         constrain_robot_robot()  [1v1]
                                           update_intake_heat()
-                                          update_intake_heat_p2()  [1v1]
-  Mode frame loop:                        update_artifact_physics()
-    handle_input()                        _update_flying_and_gate()
-    handle_input_p2()  [1v1]         release _physics_lock
-    update_turret_angle()
+  Mode frame loop:                        update_intake_heat_p2()  [1v1]
+    handle_input()                        update_artifact_physics()
+    handle_input_p2()  [1v1]              _update_flying_and_gate()
+    update_turret_angle()            release _physics_lock
     update_turret_angle_r() [1v1]
     acquire _physics_lock
       update_timer()
@@ -849,4 +912,4 @@ Dispatcher:                               update_park_status()
 - **Mirror layout**: 1v1 loading zone (top-right) is mirrored from P1's loading zone (top-left). P2's base is at right-center of field, P1's at left-center. Spike marks are mirrored horizontally (P1 left-of-center, P2 right-of-center). Alliance area artifacts are mirrored to the right side for P2.
 - **Interactive match-end buttons**: In 1v1, both scores shown side-by-side with winner announcement. Restart/Exit buttons navigable via keyboard arrows.
 - **One-way dependency**: MP-only files (`game_logic_p2`, `drawing_1v1`, `input_handler_p2`, `ai_controller`) may import from shared files, but shared files never import from MP-only files. `game_logic_p2.py` does NOT import from `game_logic.py` — obstacle cache is synced via `_set_obs_rect()` setter.
-- **No `mode_vs_ai.py`**: AI-controlled P2 runs through `mode_1v1.py` with `p2_device == "ai"` — AI update happens in the 1v1 frame loop (not in `handle_input_p2`). **⚠ Currently not wired** — `update_ai()` is never called from `mode_1v1.py`, so vs AI mode is temporarily disabled.
+- **No `mode_vs_ai.py`**: AI-controlled P2 runs through `mode_1v1.py` with `p2_device == "ai"` — AI update happens in the 1v1 frame loop (not in `handle_input_p2`). **✅ Now wired** — `update_ai()` IS called from `mode_1v1.py`, so vs AI mode is now functional.
