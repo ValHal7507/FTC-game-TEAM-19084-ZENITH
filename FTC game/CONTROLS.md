@@ -256,7 +256,7 @@ Din meniul de pauza, selecteaza **Options** pentru a personaliza tastele si buto
 - La selectarea modului 1v1, daca este detectat un singur controler, P2 este setat automat pe **AI** (asignare implicita). P2 poate alege, de asemenea, AI manual in ecranul de asignare a controlerelor
 - **Robotii se ciocnesc intre ei** — daca cei doi roboti se suprapun, sunt impinsi automat (la fel ca in 1v1)
 - AI-ul foloseste o strategie bazata pe reguli cu 5 stari:
-  1. **Colectare** — cauta cel mai apropiat artefact si se indreapta spre el cu intake-ul pornit
+  1. **Colectare** — cauta cel mai apropiat artefact si se indreapta spre el mereu (il "impinge"/"loveste"). Intakes-ul se activeaza doar cand robotul se afla la sub 85 pixeli de artefact
   2. **Navigare** — daca detine suficiente artefacte, se indreapta spre cea mai apropiata zona de lansare
   3. **Lansare** — daca se afla in zona de lansare, lanseaza toate artefactele detinute
   4. **Parcare** — in ultimele 5 secunde, se indreapta spre zona de baza pentru puncte bonus

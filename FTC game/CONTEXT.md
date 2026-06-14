@@ -180,6 +180,7 @@ No external dependencies beyond Python stdlib and `pygame`.
 | `robot_size` | 60 | Robot square side length (px) |
 | `flying_speed` | 350 | Launched artifact travel speed (px/s) |
 | `pickup_radius` | 45 | Max distance to pick up an artifact |
+| `ai_intake_start_distance` | 85 | Distance (px) at which AI activates intake while approaching an artifact |
 | `pickup_cone_angle` | 120 | Front cone for pickup (degrees) |
 | `rotation_speed` | 300 | Robot rotation speed (deg/s) |
 | `gate_range` | 45 | Max distance to interact with gate |
@@ -784,7 +785,7 @@ Processes all Pygame events once per frame. Supports keyboard and gamepad simult
 **FSM states:**
 | State | Behavior |
 |---|---|
-| `COLLECT` | Drive toward nearest artifact (within radius), intake on. If holding ≥ threshold → NAVIGATE. If no artifacts and holding ≥ 1 → NAVIGATE. If ramp has items and gate closed → GATE. |
+| `COLLECT` | Drive toward nearest artifact (within radius), always moving toward it (ramming). Intake only activates when within `ai_intake_start_distance` (85 px). If holding ≥ threshold → NAVIGATE. If no artifacts and holding ≥ 1 → NAVIGATE. If ramp has items and gate closed → GATE. |
 | `NAVIGATE` | Drive toward nearest launch point (base zone, launch zone triangle, or shooting zone). On arrival → LAUNCH. |
 | `LAUNCH` | If in launch zone and holding artifacts → launch all held. If not in launch zone → NAVIGATE. |
 | `PARK` | Drive toward P2's base zone. If holding artifacts and in launch zone → launch first. If fully parked → stop. Forced in last 5 seconds. |
@@ -802,7 +803,7 @@ Processes all Pygame events once per frame. Supports keyboard and gamepad simult
 **Helper functions:**
 | Function | Responsibility |
 |---|---|
-| `_state_collect(state, r, dt, profile)` | COLLECT state logic |
+| `_state_collect(state, r, dt, profile)` | COLLECT state logic — always moves toward artifacts (ramming), activates intake only within `ai_intake_start_distance` |
 | `_state_navigate(state, r, dt, profile)` | NAVIGATE state logic |
 | `_state_launch(state, r, dt, profile)` | LAUNCH state logic |
 | `_state_park(state, r, dt, profile)` | PARK state logic |
@@ -913,3 +914,4 @@ Dispatcher:                               update_park_status()
 - **Interactive match-end buttons**: In 1v1, both scores shown side-by-side with winner announcement. Restart/Exit buttons navigable via keyboard arrows.
 - **One-way dependency**: MP-only files (`game_logic_p2`, `drawing_1v1`, `input_handler_p2`, `ai_controller`) may import from shared files, but shared files never import from MP-only files. `game_logic_p2.py` does NOT import from `game_logic.py` — obstacle cache is synced via `_set_obs_rect()` setter.
 - **No `mode_vs_ai.py`**: AI-controlled P2 runs through `mode_1v1.py` with `p2_device == "ai"` — AI update happens in the 1v1 frame loop (not in `handle_input_p2`). **✅ Now wired** — `update_ai()` IS called from `mode_1v1.py`, so vs AI mode is now functional.
+- **AI "ramming" collection behavior**: The AI robot always moves toward the nearest artifact regardless of distance. Intake only activates when within `ai_intake_start_distance` (85 px), causing the robot to physically push/ram artifacts before picking them up. This avoids the previous behavior where the robot would stop at a distance and wait with intake on.
