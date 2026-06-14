@@ -264,14 +264,13 @@ def _state_collect(state, r, dt, profile):
     if nearest is not None:
         tx, ty = nearest.x, nearest.y
         d = math.hypot(tx - r.x, ty - r.y)
-        if d < CONFIG["pickup_radius"]:
-            _stop_robot(r)
+        _move_toward(r, tx, ty, r.speed * profile["speed_mult"], dt, obs, profile)
+        if d < CONFIG["ai_intake_start_distance"]:
             state.intake_active2 = not state.intake_overheated2
             if not state.intake_overheated2 and r.can_pickup() and _in_front_cone(r, tx, ty):
                 _try_pickup(state, r, lambda ax, ay: _in_front_cone(r, ax, ay))
         else:
-            _move_toward(r, tx, ty, r.speed * profile["speed_mult"], dt, obs, profile)
-            state.intake_active2 = not state.intake_overheated2
+            state.intake_active2 = False
         return
 
     state.intake_active2 = False

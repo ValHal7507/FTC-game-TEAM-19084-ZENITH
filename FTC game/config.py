@@ -84,6 +84,7 @@ CONFIG = {
     "robot_size": 60,
     "flying_speed": 350,
     "pickup_radius": 45,
+    "ai_intake_start_distance": 85,
     "pickup_cone_angle": 120,
     "rotation_speed": 300,
     "gate_range": 45,
