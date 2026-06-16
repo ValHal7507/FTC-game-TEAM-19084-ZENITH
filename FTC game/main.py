@@ -52,11 +52,13 @@ def main():
     chosen_mode = "solo"
     state = None
 
+    t = 0.0
     try:
         while True:
             # ── OUTER LOOP: mode select + controller assign ─────────────
             while app_screen in ("mode_select", "controller_assign"):
                 dt_menu = clock.tick_busy_loop(60) / 1000.0
+                t += dt_menu
                 events = pygame.event.get()
                 keys = pygame.key.get_pressed()
 
@@ -103,7 +105,7 @@ def main():
                 # Draw menu screens
                 render_surf.fill(BG_DARK)
                 if app_screen == "mode_select":
-                    menu_mod.draw_mode_select(render_surf, menu_selected)
+                    menu_mod.draw_mode_select(render_surf, menu_selected, t)
                 elif app_screen == "controller_assign":
                     conflict = (ca_p1 == ca_p2)
                     menu_mod.draw_controller_assign(render_surf, ca_p1, ca_p2,
