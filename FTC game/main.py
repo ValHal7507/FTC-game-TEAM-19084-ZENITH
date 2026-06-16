@@ -3,6 +3,7 @@ FTC DECODE (2025-2026) Match Simulator — Entry point.
 Thin dispatcher: init, menu routing, dispatch to mode files.
 """
 
+import os
 import sys
 import pygame
 import menu as menu_mod
@@ -33,6 +34,12 @@ def _blit_scaled(canvas, screen):
 def main():
     pygame.init()
     global render_surf
+    _icon_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "Zenith_logo.png")
+    if os.path.isfile(_icon_path):
+        try:
+            pygame.display.set_icon(pygame.image.load(_icon_path))
+        except Exception:
+            pass
     win = pygame.display.set_mode((VW, VH), pygame.RESIZABLE)
     pygame.display.set_caption("FTC DECODE — Robot simulator by TEAM ZENITH 19084")
     render_surf = pygame.Surface((VW, VH))

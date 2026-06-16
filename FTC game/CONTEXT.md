@@ -9,7 +9,7 @@ A 2D match simulator for the FIRST Tech Challenge 2025–2026 game "DECODE," sup
 ```
 FTC game/
 ├── main.py              # [SHARED] Entry point, app-level screen routing, thin dispatcher to mode files
-├── menu.py              # [SHARED] Mode-select screen, controller-assignment screen
+├── menu.py              # [SHARED] Mode-select screen, controller-assignment screen, mascot drawing
 ├── config.py            # [SHARED] Colors, CONFIG dict, layout constants, math helpers, keybinds
 ├── game_state.py        # [SHARED] Data classes: Artifact, FlyingArtifact, Robot, TeamState, GameState
 │
@@ -22,12 +22,16 @@ FTC game/
 ├── drawing.py           # [SHARED] Field, artifacts, P1 robot, HUD, match-end overlay, pause menu
 ├── drawing_1v1.py       # [MP ONLY] P2 robot rendering, 1v1 field extras
 │
-├── input_handler.py     # [SHARED] P1 input, pause/start/reset controls, public aliases
+├── input_handler.py     # [SHARED] P1 input, pause/start/reset controls.
 ├── input_handler_p2.py  # [MP ONLY] P2 input handling
 ├── ai_controller.py     # [1v1 ONLY] AI logic for P2 robot (used when P2 is assigned AI) — wired into mode_1v1.py (vs AI now functional)
 │
 ├── keybinds.json        # Saved custom keybinds (P1, created on first rebinding, loaded on startup; skipped in 1v1)
 ├── keybinds_p2.json     # Saved custom keybinds (P2, created on first rebinding; skipped in 1v1)
+├── Zenith_logo.png      # Window icon (set via pygame.display.set_icon)
+├── Zenith_logo.ico      # Exe icon (used by PyInstaller spec)
+├── Zenith_maskot.jpeg   # Legacy mascot image (still present in project folder)
+├── FTC_DECODE_Simulator.spec  # PyInstaller build spec (icon='Zenith_logo.ico')
 ├── CONTROLS.md          # User-facing controls guide (Romanian)
 └── CONTEXT.md           # This file
 ```
@@ -50,10 +54,11 @@ No external dependencies beyond Python stdlib and `pygame`.
 ### `main.py` — Entry Point
 
 - Initializes Pygame, creates a **resizable window** (`pygame.RESIZABLE`) titled `"FTC DECODE — Robot simulator by TEAM ZENITH 19084"`
+- **Window icon**: Loads `Zenith_logo.png` from the project directory via `pygame.display.set_icon()`. Falls back silently if file is missing or load fails.
 - Creates a fixed-size **virtual canvas** (`1050 × 778`) that all drawing targets
 - **App-level screen routing**: Three top-level screens — Mode Select, Controller Assign, Game Loop. `app_screen` variable (`"mode_select"`, `"controller_assign"`, `"game"`) controls which loop runs.
-- **Mode-select mini-loop**: Runs before any match. User picks Solo or 1v1. On Solo, creates `GameState` and enters game directly. On 1v1, proceeds to controller-assign screen.
-- **Controller-assign screen**: Defaults are set automatically based on detected gamepads: 2+ gamepads → P1 = Gamepad 1, P2 = Gamepad 2; 1 gamepad → P1 = Gamepad 1, P2 = AI; 0 gamepads → P1 = Gamepad 1 (not found), P2 = AI. User can change selections. P1 picks Gamepad 1 or Gamepad 2. P2 picks Gamepad 1, Gamepad 2, or AI. Same gamepad ID is blocked.
+- **Mode-select mini-loop**: Runs before any match. User picks Solo or 1v1. On Solo, creates `GameState` and enters game directly. On 1v1, proceeds to controller-assign screen. The mode-select loop accumulates a wall-clock `t` variable passed to `draw_mode_select()` for mascot animation.
+- **Controller-assign screen**: Defaults are set automatically based on detected gamepads: 2+ gamepads → P1 = Gamepad 1, P2 = Gamepad 2; 1 gamepad → P1 = Gamepad 1, P2 = AI; 0 gamepads → P1 = Gamepad 1 (not found), P2 = AI. User can change selections. P1 picks Gamepad 1 or Gamepad 2. P2 picks Gamepad 1, Gamepad 2, or AI. Same gamepad ID is blocked. Passes `ca_col` (focused column index) to `draw_controller_assign` for robot animation.
 - **Dispatcher**: After menu selection, dispatches to `mode_solo.run_solo()` or `mode_1v1.run_1v1()`. Each mode file owns its full frame loop and physics thread lifecycle.
 - Uses `clock.tick_busy_loop(fps)` for precise frame pacing
 - Calls `init_drawing()` after `pygame.init()` to initialize fonts (must happen after pygame init)
@@ -100,18 +105,45 @@ No external dependencies beyond Python stdlib and `pygame`.
 
 ### `menu.py` — Mode-Select and Controller-Assign Screens
 
-- **`draw_mode_select(screen, selected_index)`**: Renders the mode-select overlay with buttons. Navigation via Up/Down arrows or Numpad 8/2. Selection via Enter/Space.
+- **`draw_mode_select(surf, menu_selected, t=0.0)`**: Renders the mode-select overlay with buttons and animated mascot. Navigation via Up/Down arrows or Numpad 8/2. Selection via Enter/Space. The `t` parameter (wall-clock seconds) drives mascot bob and flag wave animation.
    - Modes: `"SOLO PRACTICE"` and `"1v1 LOCAL"` (vs AI now functional)
   - ZENITH branding and team tagline displayed
+  - Procedural mascot drawn at `(VW * 0.78, VH * 0.56)` with speech bubble
 - **`handle_mode_select(events, keys, selected_index)`**: Returns `(new_selected_index, chosen_mode | None)`. Chosen mode is `"solo"` or `"1v1"`.
-- **`draw_controller_assign(screen, selected_p1, selected_p2, num_joysticks, conflict, game_mode)`**: Two-column screen for 1v1 mode:
+- **`draw_controller_assign(screen, selected_p1, selected_p2, num_joysticks, conflict, game_mode, ca_col)`**: Two-column screen for 1v1 mode with animated robot silhouettes:
   - P1 column (BLUE): Gamepad 1, Gamepad 2
   - P2 column (RED): Gamepad 1, Gamepad 2, AI
-  - On same-gamepad conflict: shows warning message
+  - On same-gamepad conflict: shows warning message + amber pulse on robots
   - Navigation: Left/Right to switch columns, Up/Down to select device
   - Device format: plain strings — `"gamepad0"`, `"gamepad1"`, or `"ai"`
+  - Animated robot silhouettes below button columns: focused slot robot is awake (colored, visor active, slight bob), unfocused is asleep (gray, tilted, Zzz particles floating up)
+  - `ca_col` parameter (0 or 1) controls which slot is focused for animation
 - **`handle_controller_assign(events, keys, selected_p1, selected_p2, focused_col, num_joysticks, game_mode)`**: Returns `(new_p1, new_p2, new_focused_col, result)`. Result is `None` | `"back"` | `(p1_device_str, p2_device_str)`.
-- Font access: uses `import drawing as _drawing` then `_drawing.f_huge.render(...)` (not `from drawing import f_huge`) to avoid `None` before `init_drawing()` runs
+
+**Procedural mascot functions:**
+| Function | Signature | Behavior |
+|---|---|---|
+| `draw_mascot` | `(surf, cx, cy, t)` | Draw the procedural ZENITH mascot (chibi robot-knight with flower crown, cape, and flag), torso-center at (cx, cy). `t` drives bob, arm swing, and flag wave animation. |
+| `draw_speech_bubble` | `(surf, bx, by, t)` | Draw a typewriter-effect speech bubble at horizontal center `bx`, bottom edge `by`. Text types in at 28 chars/s, wraps at 260px, cycles every 5.5s. |
+
+**Module-level animation state** (controller-assign robots):
+- `_ca_awake` — list of 2 floats (per-slot awake factor: 0.0 asleep → 1.0 awake)
+- `_ca_last_t` — timestamp of last draw for dt computation
+- `_ca_zzz` — shared Zzz particle list
+- `_ca_zzz_fonts` — size→Font cache to avoid per-frame allocations
+- `_mode_nav_cooldown` — dict tracking navigation cooldown timestamps per screen (`"mode"`, `"ca"`)
+- `_bubble_font` — lazily initialized font for speech bubble text
+
+**Controller-assign helper functions:**
+| Function | Signature | Behavior |
+|---|---|---|
+| `_update_ca_awake` | `(ca_col, dt)` | Lerp each slot's awake factor toward target (focused→1.0, unfocused→0.15) at 3.5/s |
+| `_spawn_zzz` | `(cx, cy, slot_awake, dt)` | Emit Zzz particles from above sleeping robot head; spawn rate scales with sleep depth |
+| `_step_zzz` | `(dt)` | Advance all Zzz particles (position + alpha fade) |
+| `_draw_zzz` | `(surf)` | Blit all live Zzz particles with per-particle alpha fade |
+| `_draw_robot_slot` | `(surf, cx, cy, awake, team_col, glow_col, is_ai, t, conflict)` | Draw ~150px chibi robot torso-centred at (cx, cy). Renders onto SRCALPHA buffer with tilt rotation for sleep pose. Shows AI chip or gamepad icon on chest based on `is_ai`. Amber pulse + "!" on conflict. |
+
+Font access: uses `import drawing as _drawing` then `_drawing.f_huge.render(...)` (not `from drawing import f_huge`) to avoid `None` before `init_drawing()` runs
 
 ### `config.py` — Constants
 
@@ -168,6 +200,32 @@ No external dependencies beyond Python stdlib and `pygame`.
 | `ALLIANCE_BLUE_DIM` | `(30, 70, 120)` | P1 robot alliance (1v1) — dimmed blue (idle LED) |
 | `ALLIANCE_RED` | `(220, 50, 50)` | P2 robot alliance (1v1) — primary red |
 | `ALLIANCE_RED_DIM` | `(120, 30, 30)` | P2 robot alliance (1v1) — dimmed red (idle LED) |
+| `CA_BODY_P1` | `(55, 110, 220)` | Controller-assign robot slot body color (P1) |
+| `CA_BODY_P2` | `(210, 50, 55)` | Controller-assign robot slot body color (P2) |
+| `CA_VISOR_ACTIVE` | `(80, 200, 255)` | Controller-assign robot visor color (awake) |
+| `CA_VISOR_SLEEP` | `(28, 35, 55)` | Controller-assign robot visor color (asleep) |
+| `CA_SLEEP_BODY` | `(52, 54, 72)` | Controller-assign robot body color (asleep) |
+| `CA_WHEEL` | `(28, 28, 42)` | Controller-assign robot wheel/detail color |
+| `CA_ZZZ` | `(160, 160, 195)` | Zzz particle color for sleeping robots |
+| `CA_CONFLICT` | `(240, 160, 0)` | Controller-assign conflict alert color (amber) |
+| `CA_GLOW_P1` | `(30, 70, 180, 55)` | P1 robot glow (RGBA, SRCALPHA) |
+| `CA_GLOW_P2` | `(180, 30, 30, 55)` | P2 robot glow (RGBA, SRCALPHA) |
+| `CA_CHIP_COL` | `(55, 195, 115)` | AI chip icon color on robot chest |
+
+**Mascot colors** (procedural mascot drawing in menu.py):
+| Constant | Value | Usage |
+|---|---|---|
+| `MC_NAVY` | `(18, 22, 72)` | Mascot dark navy (outlines, limbs) |
+| `MC_MID_BLUE` | `(42, 78, 175)` | Mascot mid-blue (head, shoulders) |
+| `MC_LIGHT_BLUE` | `(78, 172, 228)` | Mascot light blue (visor, atom symbol) |
+| `MC_PURPLE` | `(95, 52, 175)` | Mascot purple (joints, waist, flag) |
+| `MC_LAVENDER` | `(165, 138, 218)` | Mascot lavender (shoulder pad rings, flagpole top) |
+| `MC_WHITE_ARM` | `(218, 222, 238)` | Mascot white (torso, shin guards, speech bubble) |
+| `MC_CAPE` | `(62, 112, 200)` | Mascot cape fill |
+| `MC_FL_BLUE` | `(75, 155, 215)` | Flower crown blue petals |
+| `MC_FL_PURPLE` | `(105, 58, 185)` | Flower crown purple petals |
+| `MC_FL_GREEN` | `(48, 135, 58)` | Flower crown leaves |
+| `MC_FL_YELLOW` | `(238, 218, 55)` | Flower crown centers |
 
 **`CONFIG` dict** — All tunable magic numbers:
 | Key | Value | Purpose |
@@ -322,7 +380,7 @@ No external dependencies beyond Python stdlib and `pygame`.
 **Methods:**
 | Method | Signature | Behavior |
 |---|---|---|
-| `total_score()` | `-> int` | `classified×3 + overflow + depot + pattern_pts + base_pts` |
+| `total_score()` | `() -> int` | `classified×3 + overflow + depot + pattern_pts + base_pts`. |
 | `add_to_ramp(color)` | `(str) -> bool` | Place in first empty slot → classified++; else overflow_held.append → overflow++, depot++. Returns True if slot found. |
 | `clear_ramp()` | `-> List[str]` | Empties ramp + overflow_held, returns all colors |
 
@@ -540,6 +598,15 @@ from game_logic_p2 import (
 ### `input_handler.py` — Controls (P1 and Shared Only)
 
 Processes all Pygame events once per frame. Supports keyboard and gamepad simultaneously. Joystick objects cached at module level via `init_joysticks()` for reliable reconnection.
+
+**Module-level state:**
+- `_joysticks` — cached list of initialized pygame Joystick objects
+- `_trigger_cooldown` — dict tracking trigger release cooldowns per joystick
+- `_prev_hat` — dict tracking previous hat state per joystick (for input detection)
+
+**Module-level constants:**
+- `_HAT_MAP` — maps hat values `(0,1)→K_UP`, `(0,-1)→K_DOWN`, `(-1,0)→K_LEFT`, `(1,0)→K_RIGHT`
+- `_PAD_BUTTON_MAP` — maps gamepad buttons `0→K_z`, `1→K_x` (used for input sequence detection)
 
 **Internal helper functions:**
 | Function | Purpose |
@@ -915,3 +982,4 @@ Dispatcher:                               update_park_status()
 - **One-way dependency**: MP-only files (`game_logic_p2`, `drawing_1v1`, `input_handler_p2`, `ai_controller`) may import from shared files, but shared files never import from MP-only files. `game_logic_p2.py` does NOT import from `game_logic.py` — obstacle cache is synced via `_set_obs_rect()` setter.
 - **No `mode_vs_ai.py`**: AI-controlled P2 runs through `mode_1v1.py` with `p2_device == "ai"` — AI update happens in the 1v1 frame loop (not in `handle_input_p2`). **✅ Now wired** — `update_ai()` IS called from `mode_1v1.py`, so vs AI mode is now functional.
 - **AI "ramming" collection behavior**: The AI robot always moves toward the nearest artifact regardless of distance. Intake only activates when within `ai_intake_start_distance` (85 px), causing the robot to physically push/ram artifacts before picking them up. This avoids the previous behavior where the robot would stop at a distance and wait with intake on.
+- **Controller-assign robot animation**: Each player slot on the controller-assign screen has an animated chibi robot silhouette. The focused slot's robot is awake (team-colored, visor active, gentle bob). The unfocused slot's robot is asleep (gray, tilted 12°, Zzz particles floating up). Robots render onto an off-screen SRCALPHA buffer with `pygame.transform.rotate` for clean tilt without pixel-crawl artifacts. Slot positions derived from existing column x-centres (`left_x + col_w // 2`, `right_x + col_w // 2`) at `int(VH * 0.70)` vertical.
