@@ -6,7 +6,7 @@ import math
 import threading
 
 import pygame
-from config import CONFIG, FX, FY, FS, clamp
+from config import CONFIG, FX, FY, FS, clamp, CHAOS_SPEED_MULT
 from game_logic_p2 import (
     update_park_status2,
     constrain_robot_r,
@@ -470,7 +470,8 @@ def _physics_thread_target(state):
     global _physics_running
     phys_clock = pygame.time.Clock()
     while _physics_running:
-        dt = min(phys_clock.tick(60) / 1000.0, 0.05)
+        dt_raw = min(phys_clock.tick(60) / 1000.0, 0.05)
+        dt = dt_raw * (CHAOS_SPEED_MULT if state.chaos_active else 1.0)
         with _physics_lock:
             update_physics(state, dt)
 

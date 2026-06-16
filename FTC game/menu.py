@@ -3,6 +3,7 @@ FTC DECODE — Mode-select and controller-assignment screens.
 """
 
 import math
+import random
 import pygame
 import drawing as _drawing
 from config import (
@@ -13,12 +14,21 @@ from config import (
     MENU_TITLE,
     MC_NAVY, MC_MID_BLUE, MC_LIGHT_BLUE, MC_PURPLE, MC_LAVENDER, MC_WHITE_ARM,
     MC_CAPE, MC_FL_BLUE, MC_FL_PURPLE, MC_FL_GREEN, MC_FL_YELLOW,
+    CA_BODY_P1, CA_BODY_P2, CA_VISOR_ACTIVE, CA_VISOR_SLEEP,
+    CA_SLEEP_BODY, CA_WHEEL, CA_ZZZ, CA_CONFLICT,
+    CA_GLOW_P1, CA_GLOW_P2, CA_CHIP_COL,
 )
 
 _MENU_NAV_DELAY_MS = 200
 _mode_nav_cooldown = {}
 
 _bubble_font = None
+
+# ── Controller-assign animation state ─────────────────────────────────
+_ca_awake      = [0.3, 0.3]   # per-slot awake factor: 0.0 asleep ↔ 1.0 awake
+_ca_last_t     = 0.0           # timestamp of last draw for dt computation
+_ca_zzz        = []            # shared Zzz particle list
+_ca_zzz_fonts  = {}            # size → Font cache to avoid per-frame allocs
 
 
 def draw_mascot(surf, cx, cy, t):
@@ -278,9 +288,200 @@ def handle_mode_select(events, keys, selected_index):
     return selected_index, chosen
 
 
+def _update_ca_awake(ca_col, dt):
+    """Lerp each slot's awake factor toward its target.
+    Focused slot → 1.0, unfocused → 0.15. Speed 3.5/s ≈ 0.3 s crossfade."""
+    global _ca_awake
+    for i in range(2):
+        target = 1.0 if ca_col == i else 0.15
+        _ca_awake[i] += (target - _ca_awake[i]) * min(1.0, 3.5 * dt)
+
+
+def _spawn_zzz(cx, cy, slot_awake, dt):
+    """Emit Zzz particles from above a sleeping robot's head.
+    Spawn rate scales with how asleep the slot is."""
+    if slot_awake >= 0.55:
+        return
+    rate = (0.55 - slot_awake) * 0.2
+    if random.random() < rate * dt * 60:
+        _ca_zzz.append({
+            "x":     cx + random.randint(-8, 16),
+            "y":     float(cy - 74),
+            "vx":    random.uniform(2.0, 5.0),
+            "vy":    random.uniform(-14.0, -8.0),
+            "alpha": 180.0,
+            "size":  random.choice([16, 21, 25]),
+        })
+
+
+def _step_zzz(dt):
+    """Advance all Zzz particles. Call once per frame."""
+    survivors = []
+    for p in _ca_zzz:
+        p["x"]     += p["vx"] * dt
+        p["y"]     += p["vy"] * dt
+        p["alpha"] -= 80.0 * dt
+        if p["alpha"] > 0:
+            survivors.append(p)
+    _ca_zzz[:] = survivors
+
+
+def _draw_zzz(surf):
+    """Blit all live Zzz particles with per-particle alpha fade."""
+    for p in _ca_zzz:
+        if p["alpha"] <= 0:
+            continue
+        size = p["size"]
+        if size not in _ca_zzz_fonts:
+            _ca_zzz_fonts[size] = pygame.font.SysFont("Arial", size, bold=True)
+        txt = _ca_zzz_fonts[size].render("z", True, CA_ZZZ)
+        tmp = pygame.Surface(txt.get_size(), pygame.SRCALPHA)
+        tmp.blit(txt, (0, 0))
+        tmp.set_alpha(int(p["alpha"]))
+        surf.blit(tmp, (int(p["x"]) - txt.get_width()  // 2,
+                        int(p["y"]) - txt.get_height() // 2))
+
+
+def _draw_robot_slot(surf, cx, cy, awake, team_col, glow_col,
+                     is_ai, t, conflict):
+    """
+    surf       – destination surface
+    cx, cy     – torso centre in surf coordinates
+    awake      – float 0.0–1.0 (from _ca_awake)
+    team_col   – CA_BODY_P1 or CA_BODY_P2
+    glow_col   – CA_GLOW_P1 or CA_GLOW_P2 (RGBA 4-tuple)
+    is_ai      – True → draw AI chip; False → draw gamepad icon
+    t          – wall-clock seconds
+    conflict   – True → amber pulse + "!" alert
+    """
+    f = max(0.0, min(1.0, awake))
+
+    def lerp_col(a, b, k):
+        return tuple(int(a[i] + (b[i] - a[i]) * k) for i in range(3))
+
+    body_col  = lerp_col(CA_SLEEP_BODY, team_col, f)
+    visor_col = lerp_col(CA_VISOR_SLEEP, CA_VISOR_ACTIVE, f)
+
+    if conflict:
+        pulse     = 0.5 + 0.5 * math.sin(t * 8.0)
+        body_col  = lerp_col(body_col,  CA_CONFLICT, pulse * 0.55)
+        visor_col = lerp_col(visor_col, CA_CONFLICT, pulse * 0.80)
+
+    bob  = int(math.sin(t * 2.2) * 3 * f)
+    sway = int(math.sin(t * 0.85) * 2 * (1.0 - f))
+    tilt = (1.0 - f) * 12.0          # degrees; 0 when awake, 12 when asleep
+
+    BW, BH = 170, 210
+    buf = pygame.Surface((BW, BH), pygame.SRCALPHA)
+    bx  = BW // 2
+    by  = BH // 2 + 18               # torso centre inside buffer
+
+    def y(off): return by + off + bob + sway
+
+    # ── GLOW ──────────────────────────────────────────────────────────
+    if f > 0.05:
+        glow_buf = pygame.Surface((BW, BH), pygame.SRCALPHA)
+        gr = int(52 + 18 * f)
+        pygame.draw.circle(glow_buf,
+                           (*glow_col[:3], int(glow_col[3] * f)),
+                           (bx, y(0)), gr)
+        buf.blit(glow_buf, (0, 0))
+
+    # ── WHEELS ────────────────────────────────────────────────────────
+    for wx in (bx - 20, bx + 2):
+        pygame.draw.ellipse(buf, CA_WHEEL,  (wx,   y(54), 26, 14))
+        pygame.draw.ellipse(buf, body_col, (wx+3, y(57), 20, 8))
+
+    # ── HIPS / WAIST ──────────────────────────────────────────────────
+    pygame.draw.rect(buf, body_col, (bx-17, y(38), 34, 18), border_radius=4)
+    pygame.draw.rect(buf, CA_WHEEL, (bx-17, y(38), 34, 18), 2, border_radius=4)
+
+    # ── TORSO ─────────────────────────────────────────────────────────
+    pygame.draw.rect(buf, body_col, (bx-25, y(-32), 50, 72), border_radius=7)
+    pygame.draw.rect(buf, CA_WHEEL, (bx-25, y(-32), 50, 72), 2, border_radius=7)
+
+    # ── CHEST ICON ────────────────────────────────────────────────────
+    chest = pygame.Rect(bx-13, y(-20), 26, 24)
+    pygame.draw.rect(buf, CA_WHEEL, chest, border_radius=3)
+
+    if is_ai:
+        # Hexagonal chip: rounded square + horizontal scan lines + "AI" label
+        pygame.draw.rect(buf, CA_CHIP_COL,
+                         (bx-9, y(-16), 18, 16), border_radius=2)
+        for row in range(3):
+            pygame.draw.line(buf, CA_WHEEL,
+                             (bx-9, y(-13 + row*5)),
+                             (bx+9, y(-13 + row*5)), 1)
+        cf = pygame.font.SysFont("Arial", 8, bold=True)
+        ct = cf.render("AI", True, CA_WHEEL)
+        buf.blit(ct, (bx - ct.get_width()//2, y(-11)))
+    else:
+        # Miniature gamepad: oval body, two bumpers, two thumbstick dots
+        pygame.draw.ellipse(buf, body_col, (bx-10, y(-14), 20, 14))
+        pygame.draw.ellipse(buf, CA_WHEEL, (bx-10, y(-14), 20, 14), 1)
+        pygame.draw.rect(buf, CA_WHEEL,   (bx-10, y(-19), 8, 4), border_radius=2)
+        pygame.draw.rect(buf, CA_WHEEL,   (bx+2,  y(-19), 8, 4), border_radius=2)
+        pygame.draw.circle(buf, visor_col, (bx-4, y(-8)), 3)
+        pygame.draw.circle(buf, visor_col, (bx+4, y(-8)), 3)
+
+    # ── SHOULDER PADS ─────────────────────────────────────────────────
+    for spx in (bx - 30, bx + 30):
+        pygame.draw.circle(buf, body_col, (spx, y(-24)), 13)
+        pygame.draw.circle(buf, CA_WHEEL, (spx, y(-24)), 13, 2)
+
+    # ── ARMS ──────────────────────────────────────────────────────────
+    pygame.draw.rect(buf, body_col, (bx-42, y(-16), 14, 34), border_radius=4)
+    pygame.draw.rect(buf, body_col, (bx+28, y(-16), 14, 34), border_radius=4)
+
+    # ── NECK ──────────────────────────────────────────────────────────
+    pygame.draw.rect(buf, CA_WHEEL, (bx-6, y(-42), 12, 12))
+
+    # ── HEAD ──────────────────────────────────────────────────────────
+    pygame.draw.rect(buf, body_col, (bx-21, y(-74), 42, 34), border_radius=7)
+    pygame.draw.rect(buf, CA_WHEEL, (bx-21, y(-74), 42, 34), 2, border_radius=7)
+
+    # ── VISOR ─────────────────────────────────────────────────────────
+    vr = pygame.Rect(bx-15, y(-66), 30, 14)
+    pygame.draw.rect(buf, visor_col, vr, border_radius=3)
+    pygame.draw.rect(buf, CA_WHEEL,  vr, 2, border_radius=3)
+    if f > 0.5:
+        # Happy squint — two short lines
+        pygame.draw.line(buf, CA_WHEEL, (bx-11, y(-60)), (bx-4,  y(-60)), 2)
+        pygame.draw.line(buf, CA_WHEEL, (bx+4,  y(-60)), (bx+11, y(-60)), 2)
+    else:
+        # Flat single line — asleep
+        pygame.draw.line(buf, CA_WHEEL, (bx-11, y(-60)), (bx+11, y(-60)), 2)
+
+    # ── ANTENNA ───────────────────────────────────────────────────────
+    pygame.draw.line(buf, body_col,  (bx, y(-74)), (bx, y(-88)), 2)
+    pygame.draw.circle(buf, visor_col, (bx, y(-89)), 4)
+
+    # ── CONFLICT "!" ──────────────────────────────────────────────────
+    if conflict:
+        pulse    = 0.5 + 0.5 * math.sin(t * 8.0)
+        bang_col = (int(CA_CONFLICT[0]),
+                    int(CA_CONFLICT[1] * pulse),
+                    int(CA_CONFLICT[2]))
+        bf   = pygame.font.SysFont("Arial", 24, bold=True)
+        bang = bf.render("!", True, bang_col)
+        buf.blit(bang, (bx - bang.get_width()//2, y(-112)))
+
+    # ── ROTATE for tilt then blit ──────────────────────────────────────
+    final = pygame.transform.rotate(buf, -tilt) if abs(tilt) > 0.5 else buf
+    sx = cx - final.get_width()  // 2
+    sy = cy - BH // 2
+    surf.blit(final, (sx, sy))
+
+
 def draw_controller_assign(screen, selected_p1, selected_p2, num_joysticks, conflict,
-                           game_mode="1v1"):
+                           game_mode="1v1", ca_col=0):
     """Draw the controller-assignment screen for 1v1 mode."""
+    global _ca_last_t
+    t  = pygame.time.get_ticks() / 1000.0
+    dt = min(0.05, t - _ca_last_t)
+    _ca_last_t = t
+    _update_ca_awake(ca_col, dt)
+
     screen.fill(BG_DARK)
 
     cx = W // 2
@@ -347,6 +548,27 @@ def draw_controller_assign(screen, selected_p1, selected_p2, num_joysticks, conf
 
     back_lbl = _drawing.f_tiny.render("ESC: back", True, GRAY)
     screen.blit(back_lbl, (40, H - 40))
+
+    # ── Animated robot slots ───────────────────────────────────────────
+    slot_y = int(VH * 0.70)
+
+    p1_cx = left_x + col_w // 2
+    p2_cx = right_x + col_w // 2
+
+    p1_is_ai = (selected_p1 >= num_joysticks)
+    p2_is_ai = (selected_p2 >= num_joysticks)
+
+    _draw_robot_slot(screen, p1_cx, slot_y,
+                     _ca_awake[0], CA_BODY_P1, CA_GLOW_P1,
+                     p1_is_ai, t, conflict)
+    _draw_robot_slot(screen, p2_cx, slot_y,
+                     _ca_awake[1], CA_BODY_P2, CA_GLOW_P2,
+                     p2_is_ai, t, conflict)
+
+    _spawn_zzz(p1_cx, slot_y, _ca_awake[0], dt)
+    _spawn_zzz(p2_cx, slot_y, _ca_awake[1], dt)
+    _step_zzz(dt)
+    _draw_zzz(screen)
 
 
 def handle_controller_assign(events, keys, selected_p1, selected_p2, focused_col, num_joysticks,

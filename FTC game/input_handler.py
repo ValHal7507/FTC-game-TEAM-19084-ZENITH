@@ -7,7 +7,7 @@ import sys
 import random
 
 import pygame
-from config import CONFIG, FX, FY, FS, clamp, dist, DEFAULT_KEYBINDS, LOCKED_KEYBINDS, save_keybinds
+from config import CONFIG, FX, FY, FS, clamp, dist, DEFAULT_KEYBINDS, LOCKED_KEYBINDS, save_keybinds, CHAOS_SEQUENCE
 from game_state import Artifact, FlyingArtifact, get_ramp_scatter_positions
 from game_logic import _physics_lock
 
@@ -15,6 +15,7 @@ _joysticks: list = []
 _trigger_cooldown: dict = {}
 _menu_nav_cooldown: dict = {}
 _MENU_NAV_DELAY_MS = 200
+_prev_hat: dict = {}            # joy_id → last hat value, for konami detection
 
 
 # ============================================================
@@ -91,6 +92,57 @@ def _gamepad_button_held(action, joy, state):
     return False
 
 
+_HAT_MAP = {
+    (0, 1):   pygame.K_UP,
+    (0, -1):  pygame.K_DOWN,
+    (-1, 0):  pygame.K_LEFT,
+    (1, 0):   pygame.K_RIGHT,
+}
+_PAD_BUTTON_MAP = {0: pygame.K_z, 1: pygame.K_x}
+
+
+def process_konami(events, state, wall_t):
+    """Detect the chaos key sequence during an active match.
+    Call once per frame, passing the full event list for that frame.
+    Advances state.konami_progress on correct keypresses.
+    Works on both keyboard and any connected gamepad.
+    Wrong key resets progress (but re-checks against sequence[0]).
+    Sets state.chaos_active and records wall_t when sequence completes.
+    No-ops if chaos is already active.
+    """
+    if state.chaos_active:
+        return
+    for ev in events:
+        virtual_key = None
+
+        if ev.type == pygame.KEYDOWN:
+            virtual_key = ev.key
+
+        elif ev.type == pygame.JOYHATMOTION:
+            jid = ev.joy
+            old = _prev_hat.get(jid, (0, 0))
+            _prev_hat[jid] = ev.value
+            if ev.value != old and ev.value in _HAT_MAP:
+                virtual_key = _HAT_MAP[ev.value]
+
+        elif ev.type == pygame.JOYBUTTONDOWN:
+            if ev.button in _PAD_BUTTON_MAP:
+                virtual_key = _PAD_BUTTON_MAP[ev.button]
+
+        if virtual_key is None:
+            continue
+        if virtual_key == CHAOS_SEQUENCE[state.konami_progress]:
+            state.konami_progress += 1
+            if state.konami_progress == len(CHAOS_SEQUENCE):
+                state.chaos_active        = True
+                state.chaos_activate_time = wall_t
+                state.konami_progress     = 0
+        else:
+            state.konami_progress = 0
+            if virtual_key == CHAOS_SEQUENCE[0]:
+                state.konami_progress = 1
+
+
 def init_joysticks(rescan=False):
     """Initialize all connected gamepads.
     If rescan=True, reinitializes joystick subsystem for hot-plug support.
@@ -99,6 +151,7 @@ def init_joysticks(rescan=False):
         pygame.joystick.quit()
         pygame.joystick.init()
     _joysticks.clear()
+    _prev_hat.clear()
     for i in range(pygame.joystick.get_count()):
         try:
             j = pygame.joystick.Joystick(i)

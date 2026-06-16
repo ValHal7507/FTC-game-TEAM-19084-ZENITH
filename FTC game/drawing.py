@@ -3,6 +3,7 @@ FTC DECODE — All drawing and rendering functions.
 """
 
 import math
+import random
 from collections import deque
 
 import pygame
@@ -21,6 +22,12 @@ from config import (
     GAMEPAD_NAMES, LOCKED_KEYBINDS,
     ALLIANCE_BLUE, ALLIANCE_BLUE_DIM, ALLIANCE_RED, ALLIANCE_RED_DIM,
     lerp,
+    VW, VH,
+    CHAOS_BG, CHAOS_GRID, CHAOS_STREAK, CHAOS_FLASH, CHAOS_ZONE_TINT,
+    CHAOS_TEXT_A, CHAOS_TEXT_B,
+    CHAOS_PARTICLE_A, CHAOS_PARTICLE_B,
+    CHAOS_DOT_FILLED, CHAOS_DOT_EMPTY,
+    CHAOS_SEQUENCE,
 )
 
 # ============================================================
@@ -57,6 +64,17 @@ def init_drawing():
 # Backward-compatible alias
 init_fonts = init_drawing
 
+_chaos_font_lg = None
+_chaos_font_sm = None
+
+
+def _init_chaos_fonts():
+    global _chaos_font_lg, _chaos_font_sm
+    if _chaos_font_lg is None:
+        _chaos_font_lg = pygame.font.SysFont("Impact", 54)
+    if _chaos_font_sm is None:
+        _chaos_font_sm = pygame.font.SysFont("Arial", 15, bold=True)
+
 
 # ============================================================
 # HELPERS
@@ -67,6 +85,172 @@ def _round_rect(surf, rect, color, r=6, width=0):
 
 
 # ============================================================
+# CHAOS MODE — PARTICLES
+# ============================================================
+def spawn_chaos_particles(state):
+    """Burst-spawn 60 particles on chaos activation. Public — imported
+    by mode files."""
+    state.chaos_particles.clear()
+    for _ in range(60):
+        state.chaos_particles.append({
+            "x":   random.uniform(VW * 0.05, VW * 0.95),
+            "y":   random.uniform(VH * 0.05, VH * 0.88),
+            "vx":  random.uniform(-130, 130),
+            "vy":  random.uniform(-160, -30),
+            "life": random.uniform(0.9, 2.4),
+            "max":  1.0,
+            "r":   random.randint(3, 7),
+            "col": random.choice([CHAOS_PARTICLE_A, CHAOS_PARTICLE_B]),
+        })
+
+
+def update_chaos_particles(state, dt):
+    """Advance particles and trickle-spawn replacements. Public."""
+    survivors = []
+    for p in state.chaos_particles:
+        p["x"]    += p["vx"] * dt
+        p["y"]    += p["vy"] * dt
+        p["vy"]   += 90 * dt          # gentle gravity
+        p["life"] -= dt
+        if p["life"] > 0:
+            survivors.append(p)
+    state.chaos_particles = survivors
+    if len(state.chaos_particles) < 25 and random.random() < 0.5:
+        state.chaos_particles.append({
+            "x":   random.uniform(VW * 0.05, VW * 0.95),
+            "y":   VH * 0.88,
+            "vx":  random.uniform(-90, 90),
+            "vy":  random.uniform(-190, -80),
+            "life": random.uniform(0.6, 1.8),
+            "max":  1.0,
+            "r":   random.randint(2, 5),
+            "col": random.choice([CHAOS_PARTICLE_A, CHAOS_PARTICLE_B]),
+        })
+
+
+def draw_chaos_particles(surf, state):
+    for p in state.chaos_particles:
+        alpha = max(0.0, min(1.0, p["life"] / p["max"]))
+        col = (max(0, min(255, int(p["col"][0]*alpha))),
+               max(0, min(255, int(p["col"][1]*alpha))),
+               max(0, min(255, int(p["col"][2]*alpha))))
+        pygame.draw.circle(surf, col, (int(p["x"]), int(p["y"])), p["r"])
+
+
+# ============================================================
+# CHAOS MODE — BACKGROUND
+# ============================================================
+def draw_chaos_background(surf, t):
+    """Dark crimson-purple grid field. Call INSTEAD of the normal
+    background fill."""
+    surf.fill(CHAOS_BG)
+
+    pulse = 0.5 + 0.5 * math.sin(t * 3.0)
+    grid_col = (
+        int(CHAOS_GRID[0] + 40 * pulse),
+        CHAOS_GRID[1],
+        int(CHAOS_GRID[2] + 50 * pulse),
+    )
+    spacing = 48
+    for gx in range(0, VW, spacing):
+        pygame.draw.line(surf, grid_col, (gx, 0), (gx, VH), 1)
+    for gy in range(0, VH, spacing):
+        pygame.draw.line(surf, grid_col, (0, gy), (VW, gy), 1)
+
+    # Speed-line streaks scrolling diagonally
+    for i in range(10):
+        bx = int((VW * i / 10 + t * 70) % (VW + 60))
+        pygame.draw.line(surf, CHAOS_STREAK, (bx, 0), (bx - 50, VH), 1)
+
+
+def draw_chaos_zone_tint(surf):
+    """Overlay a red tint across the entire field area to tint zones.
+    Call AFTER zone shapes are drawn, BEFORE robots/artifacts."""
+    tint = pygame.Surface((VW, VH), pygame.SRCALPHA)
+    tint.fill(CHAOS_ZONE_TINT)
+    surf.blit(tint, (0, 0))
+
+
+# ============================================================
+# CHAOS MODE — HUD
+# ============================================================
+def draw_chaos_hud(surf, state, t):
+    """Flash, splash title, mascot backflip cameo, and persistent badge.
+    Call AFTER all normal HUD elements so chaos draws on top."""
+    _init_chaos_fonts()
+    age = t - state.chaos_activate_time
+
+    # Activation screen flash (first 0.35 s)
+    if age < 0.35:
+        a = int(220 * (1.0 - age / 0.35))
+        flash_surf = pygame.Surface((VW, VH), pygame.SRCALPHA)
+        flash_surf.fill((*CHAOS_FLASH, a))
+        surf.blit(flash_surf, (0, 0))
+
+    # "⚡ CHAOS MODE ⚡" splash that scales in then fades (0 – 2.0 s)
+    if age < 2.0:
+        scale = min(1.0, age / 0.22)
+        fade  = max(0.0, 1.0 - (age - 1.1) / 0.9) if age > 1.1 else 1.0
+        txt   = _chaos_font_lg.render("⚡ CHAOS MODE ⚡", True, CHAOS_TEXT_A)
+        if scale < 1.0:
+            w = max(1, int(txt.get_width()  * scale))
+            h = max(1, int(txt.get_height() * scale))
+            txt = pygame.transform.smoothscale(txt, (w, h))
+        alpha_s = pygame.Surface(txt.get_size(), pygame.SRCALPHA)
+        alpha_s.blit(txt, (0, 0))
+        alpha_s.set_alpha(int(255 * fade))
+        surf.blit(alpha_s, (VW//2 - alpha_s.get_width()//2,
+                             VH//2 - alpha_s.get_height()//2))
+
+    # Mascot backflip cameo (bottom-right corner, 0 – 2.0 s)
+    if age < 2.0:
+        try:
+            from menu import draw_mascot   # lazy import; avoids circular dep
+            mascot_buf = pygame.Surface((200, 260), pygame.SRCALPHA)
+            draw_mascot(mascot_buf, 100, 130, t)
+            small = pygame.transform.smoothscale(mascot_buf, (80, 104))
+            # Full 360° rotation completes in 0.65 s, then stays upright
+            angle = min(360.0, (age / 0.65) * 360.0)
+            rotated = pygame.transform.rotate(small, angle)
+            fade = max(0.0, 1.0 - (age - 1.3) / 0.7) if age > 1.3 else 1.0
+            rotated.set_alpha(int(255 * fade))
+            bx = VW - rotated.get_width()  - 12
+            by = VH - rotated.get_height() - 12
+            surf.blit(rotated, (bx, by))
+        except ImportError:
+            pass   # draw_mascot not yet implemented — skip silently
+
+    # Persistent pulsing "⚡ CHAOS MODE" badge (top-centre, after flash)
+    if age >= 0.35:
+        pulse = 0.65 + 0.35 * math.sin(t * 5.0)
+        col   = (int(CHAOS_TEXT_A[0]*pulse), int(CHAOS_TEXT_A[1]*pulse),
+                 int(CHAOS_TEXT_A[2]*pulse))
+        badge = _chaos_font_sm.render("⚡  CHAOS MODE  ⚡", True, col)
+        surf.blit(badge, (VW//2 - badge.get_width()//2, 5))
+
+
+def draw_konami_progress(surf, state):
+    """Dot row in top-right corner while the sequence is being entered.
+    Filled purple dot = correct key entered. Grey ring = still needed.
+    Self-guards: does nothing when chaos is active or no keys pressed."""
+    if state.chaos_active or state.konami_progress == 0:
+        return
+    _init_chaos_fonts()
+    n     = len(CHAOS_SEQUENCE)
+    r     = 5
+    gap   = 14
+    sx    = VW - n * gap - 10
+    sy    = 8
+    for i in range(n):
+        cx = sx + i * gap + r
+        cy = sy + r
+        if i < state.konami_progress:
+            pygame.draw.circle(surf, CHAOS_DOT_FILLED, (cx, cy), r)
+        else:
+            pygame.draw.circle(surf, CHAOS_DOT_EMPTY, (cx, cy), r, 1)
+
+
+# ============================================================
 # FIELD — STATIC CACHE
 # ============================================================
 _field_surface = None
@@ -74,13 +258,10 @@ _field_cache_park = None
 
 
 def _build_field_surface():
-    """Render all static field elements onto a cached surface."""
+    """Render all static field elements onto a cached surface.
+    Background is NOT included — drawn separately by draw_field()."""
     global _field_surface, _field_cache_park
-    surf = pygame.Surface((W, H))
-
-    rect = pygame.Rect(FX, FY, FS, FS)
-    _round_rect(surf, rect, CHARCOAL, 4)
-    pygame.draw.rect(surf, GRAY, rect, 2, border_radius=4)
+    surf = pygame.Surface((W, H), pygame.SRCALPHA)
 
     for i in range(1, 6):
         x = FX + i * (FS // 6)
@@ -174,12 +355,22 @@ def _invalidate_field_cache():
 # FIELD — DYNAMIC OVERLAY + DRAW
 # ============================================================
 def draw_field(screen, state):
-    """Draw the field: cached static layer + dynamic per-frame elements."""
+    """Draw the field: background + cached static elements + dynamic overlays."""
     global _field_surface, _field_cache_park
 
     if _field_surface is None:
         _build_field_surface()
 
+    # ── Background: normal charcoal floor or chaos grid ───────────────
+    if state.chaos_active:
+        t = pygame.time.get_ticks() / 1000.0
+        draw_chaos_background(screen, t)
+    else:
+        rect = pygame.Rect(FX, FY, FS, FS)
+        _round_rect(screen, rect, CHARCOAL, 4)
+        pygame.draw.rect(screen, GRAY, rect, 2, border_radius=4)
+
+    # ── Static field elements (zones, goal, ramp, labels, etc.) ──────
     screen.blit(_field_surface, (0, 0))
 
     # --- Drive mode badge (always dynamic) ---
@@ -448,15 +639,15 @@ def draw_robot(screen, state):
 # ============================================================
 # HUD
 # ============================================================
-def draw_hud(screen, state):
+def draw_hud(screen, state, t=0.0):
     """Draw the heads-up display panel."""
     if state.game_mode == "1v1" and state.robot2 is not None:
-        _draw_hud_1v1(screen, state)
+        _draw_hud_1v1(screen, state, t)
     else:
-        _draw_hud_solo(screen, state)
+        _draw_hud_solo(screen, state, t)
 
 
-def _draw_hud_1v1(screen, state):
+def _draw_hud_1v1(screen, state, t=0.0):
     """Split HUD for 1v1 mode: P1 top half, timer middle, P2 bottom half."""
     panel = pygame.Rect(HX, FY - 5, HW, H - FY + 5)
     _round_rect(screen, panel, BG_DARK, 6)
@@ -547,8 +738,8 @@ def _draw_hud_1v1(screen, state):
 
     # Winner indicator at match end
     if state.phase == "FINISHED":
-        s1 = state.team.total_score()
-        s2 = state.team2.total_score()
+        s1 = state.team.total_score(state.chaos_active)
+        s2 = state.team2.total_score(state.chaos_active)
         if s1 > s2:
             winner, wclr = "P1 WINS", ALLIANCE_BLUE
         elif s2 > s1:
@@ -603,7 +794,7 @@ def _draw_player_hud_section(screen, team, robot, park_status,
     y += bar_h + 6
 
     # Score (compact)
-    lbl = f_tiny.render(f"Score: {team.total_score()}  |  Cls: {team.classified}  |  Ovf: {team.overflow}  |  Pt: {team.pattern_pts}  |  Base: {team.base_pts}", True, WHITE)
+    lbl = f_tiny.render(f"Score: {team.total_score(state.chaos_active)}  |  Cls: {team.classified}  |  Ovf: {team.overflow}  |  Pt: {team.pattern_pts}  |  Base: {team.base_pts}", True, WHITE)
     screen.blit(lbl, (HX + 18, y))
     y += f_tiny.get_height() + 4
 
@@ -654,7 +845,7 @@ def _draw_player_hud_section(screen, team, robot, park_status,
     return y + cell_h + 6
 
 
-def _draw_hud_solo(screen, state):
+def _draw_hud_solo(screen, state, t=0.0):
     """Solo-mode HUD (unchanged from original)."""
     HUD_BRAND_H = 48
 
@@ -775,7 +966,7 @@ def _draw_hud_solo(screen, state):
     screen.blit(lbl, (HX + 18, y))
     y += f_hud_s.get_height() + 6
     lines = [
-        f"Total:  {team.total_score()}",
+        f"Total:  {team.total_score(state.chaos_active)}",
         f"Classified:  {team.classified}  (+{team.classified * 3})",
         f"Overflow:  {team.overflow}",
         f"Depot:  {team.depot}",
@@ -900,8 +1091,8 @@ def _build_end_overlay(state):
 
     if state.game_mode == "1v1" and state.team2 is not None:
         # 1v1: show both scores side by side
-        s1 = state.team.total_score()
-        s2 = state.team2.total_score()
+        s1 = state.team.total_score(state.chaos_active)
+        s2 = state.team2.total_score(state.chaos_active)
 
         # P1 score (left)
         lbl = f_small.render("P1 — BLUE", True, ALLIANCE_BLUE)
@@ -943,7 +1134,7 @@ def _build_end_overlay(state):
     else:
         # Solo: original layout
         t = state.team
-        lbl = f_hud.render(f"FINAL SCORE: {t.total_score()}", True, WHITE)
+        lbl = f_hud.render(f"FINAL SCORE: {t.total_score(state.chaos_active)}", True, WHITE)
         surf.blit(lbl, (cx - lbl.get_width() // 2, cy))
         cy += 40
 

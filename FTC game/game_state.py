@@ -111,10 +111,12 @@ class TeamState:
     pattern_pts: int = 0
     base_pts: int = 0
 
-    def total_score(self):
-        """Calculate the total score from all sources."""
-        return (self.classified * 3 + (self.overflow + self.depot) * 1 +
+    def total_score(self, chaos_active=False):
+        """Calculate the total score from all sources.
+        Doubled during CHAOS MODE."""
+        base = (self.classified * 3 + (self.overflow + self.depot) * 1 +
                 self.pattern_pts + self.base_pts)
+        return base * 2 if chaos_active else base
 
     def add_to_ramp(self, color: str) -> bool:
         """Place an artifact on the ramp. Returns True if it fit in a slot."""
@@ -194,6 +196,12 @@ class GameState:
 
         # Mode return signal (set by pause menu "Mode Select" action)
         self.pending_return = None
+
+        # ── Chaos Mode ────────────────────────────────────────────────
+        self.chaos_active        = False
+        self.konami_progress     = 0
+        self.chaos_activate_time = 0.0   # wall-clock seconds when chaos triggered
+        self.chaos_particles     = []    # managed by drawing.py
 
         self._init_artifacts()
 

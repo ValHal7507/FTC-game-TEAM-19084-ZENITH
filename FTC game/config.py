@@ -85,6 +85,39 @@ MC_FL_PURPLE  = (105, 58, 185)
 MC_FL_GREEN   = (48, 135, 58)
 MC_FL_YELLOW  = (238, 218, 55)
 
+# ── Controller-assign robot slot colors ───────────────────────────────
+CA_BODY_P1      = ( 55, 110, 220)
+CA_BODY_P2      = (210,  50,  55)
+CA_VISOR_ACTIVE = ( 80, 200, 255)
+CA_VISOR_SLEEP  = ( 28,  35,  55)
+CA_SLEEP_BODY   = ( 52,  54,  72)
+CA_WHEEL        = ( 28,  28,  42)
+CA_ZZZ          = (160, 160, 195)
+CA_CONFLICT     = (240, 160,   0)
+CA_GLOW_P1      = ( 30,  70, 180,  55)   # RGBA — used with SRCALPHA surface
+CA_GLOW_P2      = (180,  30,  30,  55)
+CA_CHIP_COL     = ( 55, 195, 115)
+
+# ── Chaos Mode ────────────────────────────────────────────────────────
+CHAOS_SEQUENCE = [
+    pygame.K_UP, pygame.K_UP, pygame.K_DOWN, pygame.K_DOWN,
+    pygame.K_LEFT, pygame.K_RIGHT, pygame.K_LEFT, pygame.K_RIGHT,
+    pygame.K_z, pygame.K_x,
+]
+CHAOS_SPEED_MULT  = 2.0
+
+CHAOS_BG          = (10,   0,  25)
+CHAOS_GRID        = (90,   0, 130)
+CHAOS_STREAK      = (160,  0,  60)
+CHAOS_FLASH       = (255, 40,  40)
+CHAOS_ZONE_TINT   = (120,  0,  40, 60)   # RGBA, semi-transparent zone tint
+CHAOS_TEXT_A      = (255,  60,   0)
+CHAOS_TEXT_B      = (200,   0, 100)
+CHAOS_PARTICLE_A  = (255,   0, 160)
+CHAOS_PARTICLE_B  = (255, 120,   0)
+CHAOS_DOT_FILLED  = (160,  60, 220)
+CHAOS_DOT_EMPTY   = ( 70,  70,  70)
+
 # ============================================================
 # CONFIG
 # ============================================================

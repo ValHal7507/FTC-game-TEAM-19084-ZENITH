@@ -110,7 +110,7 @@ def main():
                     conflict = (ca_p1 == ca_p2)
                     menu_mod.draw_controller_assign(render_surf, ca_p1, ca_p2,
                                                     pygame.joystick.get_count(), conflict,
-                                                    game_mode=chosen_mode)
+                                                    game_mode=chosen_mode, ca_col=ca_col)
                 _blit_scaled(render_surf, win)
                 pygame.display.flip()
 

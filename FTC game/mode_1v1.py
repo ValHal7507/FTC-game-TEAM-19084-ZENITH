@@ -4,18 +4,21 @@ FTC DECODE — 1v1 local multiplayer game mode loop.
 
 import sys
 import pygame
-from config import CONFIG, VW, VH, BLACK
+from config import CONFIG, VW, VH, BLACK, CHAOS_SPEED_MULT
 from drawing import (
     draw_field, draw_artifacts, draw_robot,
     draw_hud, draw_match_end, draw_match_end_buttons,
     draw_pause_menu, draw_options_screen,
+    draw_chaos_background, draw_chaos_zone_tint, draw_chaos_particles,
+    draw_chaos_hud, draw_konami_progress,
+    spawn_chaos_particles, update_chaos_particles,
 )
 from drawing_1v1 import draw_field_1v1_extras, draw_robot2
 from game_logic import (
     update_timer, update_turret_angle, update_turret_angle_r,
     _physics_lock, start_physics_thread, stop_physics_thread,
 )
-from input_handler import handle_input
+from input_handler import handle_input, process_konami
 from input_handler_p2 import handle_input_p2
 from ai_controller import update_ai
 
@@ -55,7 +58,8 @@ def run_1v1(screen, canvas, clock, state):
                 state.pending_return = None
                 return r
 
-            dt = min(clock.tick_busy_loop(CONFIG["fps"]) / 1000.0, 0.05)
+            dt_raw = min(clock.tick_busy_loop(CONFIG["fps"]) / 1000.0, 0.05)
+            dt     = dt_raw * (CHAOS_SPEED_MULT if state.chaos_active else 1.0)
             events = pygame.event.get()
             keys = pygame.key.get_pressed()
 
@@ -65,6 +69,10 @@ def run_1v1(screen, canvas, clock, state):
                     sys.exit()
                 if ev.type == pygame.VIDEORESIZE:
                     pygame.display.set_mode((ev.w, ev.h), pygame.RESIZABLE)
+
+            # ── Konami code detection ─────────────────────────────────
+            wall_t = pygame.time.get_ticks() / 1000.0
+            process_konami(events, state, wall_t)
 
             # ── Match finished: end-game navigation ──────────────────────
             if state.phase == "FINISHED":
@@ -94,14 +102,15 @@ def run_1v1(screen, canvas, clock, state):
 
                 # Render match end
                 with _physics_lock:
-                    update_timer(state, dt)
+                    update_timer(state, dt_raw)
+                    t = pygame.time.get_ticks() / 1000.0
                     canvas.fill(BLACK)
                     draw_field(canvas, state)
                     draw_field_1v1_extras(canvas, state)
                     draw_artifacts(canvas, state)
                     draw_robot(canvas, state)
                     draw_robot2(canvas, state)
-                    draw_hud(canvas, state)
+                    draw_hud(canvas, state, t)
                     draw_match_end(canvas, state)
                     draw_match_end_buttons(canvas, state, end_menu_index)
 
@@ -127,15 +136,29 @@ def run_1v1(screen, canvas, clock, state):
             if state.robot2 is not None:
                 update_turret_angle_r(state, state.robot2)
 
+            # ── Chaos particle management ──────────────────────────────
+            if state.chaos_active:
+                if not state.chaos_particles:
+                    spawn_chaos_particles(state)
+                update_chaos_particles(state, dt)
+
             with _physics_lock:
-                update_timer(state, dt)
+                update_timer(state, dt_raw)
+                t = pygame.time.get_ticks() / 1000.0
                 canvas.fill(BLACK)
                 draw_field(canvas, state)
                 draw_field_1v1_extras(canvas, state)
+                if state.chaos_active:
+                    draw_chaos_zone_tint(canvas)
                 draw_artifacts(canvas, state)
                 draw_robot(canvas, state)
                 draw_robot2(canvas, state)
-                draw_hud(canvas, state)
+                if state.chaos_active:
+                    draw_chaos_particles(canvas, state)
+                draw_hud(canvas, state, t)
+                if state.chaos_active:
+                    draw_chaos_hud(canvas, state, t)
+                draw_konami_progress(canvas, state)
                 if not state.timer_running and state.phase != "FINISHED":
                     draw_pause_menu(canvas, state)
                 if state.options_active:
