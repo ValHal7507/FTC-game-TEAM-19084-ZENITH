@@ -9,15 +9,22 @@ from config import CONFIG, FX, FY, FS, clamp
 
 
 # ---------------------------------------------------------------------------
-# Cached obstacle rect (kept in sync by game_logic.rebuild_obstacle_cache)
+# Cached obstacle rects (kept in sync by game_logic.rebuild_obstacle_cache)
 # ---------------------------------------------------------------------------
 _cached_obs_rect = None
+_cached_obs_rects = []
 
 
 def _set_obs_rect(rect):
     """Update the cached obstacle rect. Called by game_logic.rebuild_obstacle_cache."""
     global _cached_obs_rect
     _cached_obs_rect = rect
+
+
+def _set_obs_rects(rects):
+    """Update the cached obstacle rect list. Called by game_logic.rebuild_obstacle_cache."""
+    global _cached_obs_rects
+    _cached_obs_rects = rects
 
 
 def _get_obs_rect():
@@ -27,6 +34,11 @@ def _get_obs_rect():
     return pygame.Rect(0, 0, 0, 0)
 
 
+def _get_obs_rects():
+    """Return the cached list of obstacle rects."""
+    return _cached_obs_rects
+
+
 # ---------------------------------------------------------------------------
 # Robot constraint
 # ---------------------------------------------------------------------------
@@ -34,25 +46,27 @@ _CONSTRAIN_MAX_ITER = 8
 
 
 def constrain_robot_r(state, robot):
-    """Push the robot out of the goal+depot obstacle rect."""
+    """Push the robot out of all obstacle rects."""
     sz = CONFIG["robot_size"]
     half = sz // 2
-    obs = _get_obs_rect()
+    obs_list = _get_obs_rects()
 
     for _ in range(_CONSTRAIN_MAX_ITER):
         resolved = True
         rob_rect = pygame.Rect(robot.x - half, robot.y - half, sz, sz)
-        if not rob_rect.colliderect(obs):
-            break
-        resolved = False
-        ol = rob_rect.right - obs.left
-        o_r = obs.right - rob_rect.left
-        ot = rob_rect.bottom - obs.top
-        ob = obs.bottom - rob_rect.top
-        if min(ol, o_r) < min(ot, ob):
-            robot.x = obs.left - half if ol < o_r else obs.right + half
-        else:
-            robot.y = obs.top - half if ot < ob else obs.bottom + half
+        for obs in obs_list:
+            if not rob_rect.colliderect(obs):
+                continue
+            resolved = False
+            ol = rob_rect.right - obs.left
+            o_r = obs.right - rob_rect.left
+            ot = rob_rect.bottom - obs.top
+            ob = obs.bottom - rob_rect.top
+            if min(ol, o_r) < min(ot, ob):
+                robot.x = obs.left - half if ol < o_r else obs.right + half
+            else:
+                robot.y = obs.top - half if ot < ob else obs.bottom + half
+            rob_rect = pygame.Rect(robot.x - half, robot.y - half, sz, sz)
         if resolved:
             break
 
@@ -94,10 +108,10 @@ def constrain_robot_robot(state):
                 push = ob / 2
                 r1.y += push
                 r2.y -= push
-        r1.x = clamp(r1.x, FX, FX + FS)
-        r1.y = clamp(r1.y, FY, FY + FS)
-        r2.x = clamp(r2.x, FX, FX + FS)
-        r2.y = clamp(r2.y, FY, FY + FS)
+        r1.x = clamp(r1.x, FX + 30, FX + FS - 30)
+        r1.y = clamp(r1.y, FY + 30, FY + FS - 30)
+        r2.x = clamp(r2.x, FX + 30, FX + FS - 30)
+        r2.y = clamp(r2.y, FY + 30, FY + FS - 30)
 
 
 # ---------------------------------------------------------------------------
@@ -105,7 +119,10 @@ def constrain_robot_robot(state):
 # ---------------------------------------------------------------------------
 def update_turret_angle_r(state, robot):
     """Snap turret angle to point at goal for an arbitrary robot."""
-    gr = state.goal_rect()
+    if state.game_mode == "1v1" and state.robot2 is not None and robot is state.robot2:
+        gr = state.goal_rect_p2()
+    else:
+        gr = state.goal_rect()
     gx = gr.centerx - robot.x
     gy = gr.centery - robot.y
     target = math.atan2(gx, -gy)

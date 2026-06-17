@@ -255,13 +255,15 @@ def draw_konami_progress(surf, state):
 # ============================================================
 _field_surface = None
 _field_cache_park = None
+_cached_game_mode = None
 
 
-def _build_field_surface():
+def _build_field_surface(game_mode="solo"):
     """Render all static field elements onto a cached surface.
     Background is NOT included — drawn separately by draw_field()."""
-    global _field_surface, _field_cache_park
+    global _field_surface, _field_cache_park, _cached_game_mode
     surf = pygame.Surface((W, H), pygame.SRCALPHA)
+    _cached_game_mode = game_mode
 
     for i in range(1, 6):
         x = FX + i * (FS // 6)
@@ -269,15 +271,40 @@ def _build_field_surface():
         y = FY + i * (FS // 6)
         pygame.draw.line(surf, DARK_GRAY, (FX, y), (FX + FS, y), 1)
 
-    lr = pygame.Rect(FX, FY, CONFIG["loading_zone_size"], CONFIG["loading_zone_size"])
-    s = pygame.Surface((lr.w, lr.h), pygame.SRCALPHA)
-    s.fill((60, 60, 70, 60))
-    surf.blit(s, (lr.x, lr.y))
-    pygame.draw.rect(surf, SOFT_WHITE, lr, 2, border_radius=3)
-    lbl = f_tiny.render("LOAD ZONE", True, SOFT_WHITE)
-    surf.blit(lbl, (lr.centerx - lbl.get_width() // 2, lr.centery - lbl.get_height() // 2))
+    if game_mode == "1v1":
+        # P1 loading zone: BOTTOM-LEFT (blue)
+        lr1 = pygame.Rect(FX + 5,
+                          FY + FS - CONFIG["loading_zone_size"] - 5,
+                          CONFIG["loading_zone_size"], CONFIG["loading_zone_size"])
+        s = pygame.Surface((lr1.w, lr1.h), pygame.SRCALPHA)
+        s.fill((60, 60, 70, 60))
+        surf.blit(s, (lr1.x, lr1.y))
+        pygame.draw.rect(surf, ALLIANCE_BLUE, lr1, 2, border_radius=3)
+        lbl = f_tiny.render("LOAD ZONE", True, ALLIANCE_BLUE)
+        surf.blit(lbl, (lr1.centerx - lbl.get_width() // 2,
+                        lr1.centery - lbl.get_height() // 2))
 
-    br = pygame.Rect(FX + 10, FY + FS // 2 - CONFIG["base_size"] // 2,
+        # P2 loading zone: BOTTOM-RIGHT (red)
+        lr2 = pygame.Rect(FX + FS - CONFIG["loading_zone_size"] - 5,
+                          FY + FS - CONFIG["loading_zone_size"] - 5,
+                          CONFIG["loading_zone_size"], CONFIG["loading_zone_size"])
+        s2 = pygame.Surface((lr2.w, lr2.h), pygame.SRCALPHA)
+        s2.fill((60, 60, 70, 60))
+        surf.blit(s2, (lr2.x, lr2.y))
+        pygame.draw.rect(surf, ALLIANCE_RED, lr2, 2, border_radius=3)
+        lbl = f_tiny.render("LOAD ZONE", True, ALLIANCE_RED)
+        surf.blit(lbl, (lr2.centerx - lbl.get_width() // 2,
+                        lr2.centery - lbl.get_height() // 2))
+    else:
+        lr = pygame.Rect(FX, FY, CONFIG["loading_zone_size"], CONFIG["loading_zone_size"])
+        s = pygame.Surface((lr.w, lr.h), pygame.SRCALPHA)
+        s.fill((60, 60, 70, 60))
+        surf.blit(s, (lr.x, lr.y))
+        pygame.draw.rect(surf, SOFT_WHITE, lr, 2, border_radius=3)
+        lbl = f_tiny.render("LOAD ZONE", True, SOFT_WHITE)
+        surf.blit(lbl, (lr.centerx - lbl.get_width() // 2, lr.centery - lbl.get_height() // 2))
+
+    br = pygame.Rect(FX + 110, FY + FS // 2 - CONFIG["base_size"] // 2 + 150,
                      CONFIG["base_size"], CONFIG["base_size"])
     pygame.draw.rect(surf, ROBOT_PURPLE, br, 2, border_radius=3)
     lbl = f_small.render("BASE", True, ROBOT_PURPLE)
@@ -301,28 +328,98 @@ def _build_field_surface():
     shoot_lbl = f_tiny.render("SHOOT", True, SOFT_WHITE)
     surf.blit(shoot_lbl, (_cx - shoot_lbl.get_width() // 2, int(_cy + _ht / 3) - shoot_lbl.get_height() - 4))
 
-    gr = pygame.Rect(FX + FS // 2 - CONFIG["goal_w"] // 2, FY,
-                     CONFIG["goal_w"], CONFIG["goal_h"])
-    pygame.draw.rect(surf, GOAL_DARK, gr, border_radius=4)
-    pygame.draw.rect(surf, GOAL_GOLD, gr, 2, border_radius=4)
-    lbl = f_small.render("GOAL", True, GOAL_GOLD)
-    surf.blit(lbl, (gr.centerx - lbl.get_width() // 2, gr.centery - lbl.get_height() // 2))
+    if game_mode == "1v1":
+        # ── Blue (P1) ramp — LEFT side, vertical ──────────────────
+        # Blue strip fill (no border yet)
+        strip_l = pygame.Surface((FS, FS), pygame.SRCALPHA)
+        pygame.draw.rect(strip_l, (*ALLIANCE_BLUE, 55),
+                         (0, 0, 18, 96 - FY))
+        surf.blit(strip_l, (FX, FY))
+        # Strip border — skip right side (shared with triangle)
+        pygame.draw.line(surf, ALLIANCE_BLUE, (FX, FY), (FX + 18, FY), 2)
+        pygame.draw.line(surf, ALLIANCE_BLUE, (FX, FY), (FX, FY + 91), 2)
+        pygame.draw.line(surf, ALLIANCE_BLUE, (FX, FY + 91), (FX + 18, FY + 91), 2)
 
-    rr = pygame.Rect(gr.x, gr.bottom + 5, gr.w, CONFIG["ramp_h"])
-    pygame.draw.rect(surf, RAMP_DARK, rr, border_radius=2)
-    pygame.draw.rect(surf, GRAY, rr, 1, border_radius=2)
+        # Blue triangle fill (no border yet)
+        p1_tri = [(FX+18, FY), (FX+18+90, FY), (FX+18, FY+90)]
+        tri_surf_bl = pygame.Surface((FS, FS), pygame.SRCALPHA)
+        pygame.draw.polygon(tri_surf_bl, (*ALLIANCE_BLUE, 55),
+                            [(p[0]-FX, p[1]-FY) for p in p1_tri])
+        surf.blit(tri_surf_bl, (FX, FY))
+        # Triangle border — skip left side (shared with strip)
+        pygame.draw.line(surf, ALLIANCE_BLUE, (FX+18, FY), (FX+18+90, FY), 2)
+        pygame.draw.line(surf, ALLIANCE_BLUE, (FX+18+90, FY), (FX+18, FY+90), 2)
 
-    gt = pygame.Rect(rr.right - 18, rr.y, 18, rr.h)
-    pygame.draw.rect(surf, GATE_COLOR, gt, border_radius=2)
-    pygame.draw.rect(surf, WHITE, gt, 1, border_radius=2)
-    lbl = f_tiny.render("GATE", True, GOLD)
-    surf.blit(lbl, (gt.centerx - lbl.get_width() // 2, gt.y - 13))
+        # Vertical ramp touching left wall
+        rr1 = pygame.Rect(FX, FY + 90, 18, 284)
+        pygame.draw.rect(surf, RAMP_DARK, rr1, border_radius=2)
+        pygame.draw.rect(surf, GRAY, rr1, 1, border_radius=2)
 
-    dr = pygame.Rect(gr.x, gr.bottom + 5 + CONFIG["ramp_h"] + 3, gr.w, CONFIG["depot_h"])
-    pygame.draw.rect(surf, (40, 38, 35), dr, border_radius=2)
-    pygame.draw.rect(surf, GRAY, dr, 1, border_radius=2)
-    lbl = f_tiny.render("DEPOT", True, GRAY)
-    surf.blit(lbl, (dr.centerx - lbl.get_width() // 2, dr.centery - lbl.get_height() // 2))
+        # ── Red (P2) ramp — RIGHT side, vertical ──────────────────
+        # Red strip fill (no border yet)
+        strip_r = pygame.Surface((FS, FS), pygame.SRCALPHA)
+        pygame.draw.rect(strip_r, (*ALLIANCE_RED, 55),
+                         (FS - 18, 0, 18, 96 - FY))
+        surf.blit(strip_r, (FX, FY))
+        # Strip border — skip left side (shared with triangle)
+        rx = FX + FS - 18
+        pygame.draw.line(surf, ALLIANCE_RED, (rx, FY), (rx + 18, FY), 2)
+        pygame.draw.line(surf, ALLIANCE_RED, (rx + 18, FY), (rx + 18, FY + 91), 2)
+        pygame.draw.line(surf, ALLIANCE_RED, (rx, FY + 91), (rx + 18, FY + 91), 2)
+
+        # Red triangle fill (no border yet)
+        p2_tri = [(FX+FS-18, FY), (FX+FS-18-90, FY), (FX+FS-18, FY+90)]
+        tri_surf_rd = pygame.Surface((FS, FS), pygame.SRCALPHA)
+        pygame.draw.polygon(tri_surf_rd, (*ALLIANCE_RED, 55),
+                            [(p[0]-FX, p[1]-FY) for p in p2_tri])
+        surf.blit(tri_surf_rd, (FX, FY))
+        # Triangle border — skip right side (shared with strip)
+        pygame.draw.line(surf, ALLIANCE_RED, (FX+FS-18-90, FY), (FX+FS-18, FY), 2)
+        pygame.draw.line(surf, ALLIANCE_RED, (FX+FS-18-90, FY), (FX+FS-18, FY+90), 2)
+
+        # Vertical ramp touching right wall
+        rr2 = pygame.Rect(FX + FS - 18, FY + 90, 18, 284)
+        pygame.draw.rect(surf, RAMP_DARK, rr2, border_radius=2)
+        pygame.draw.rect(surf, GRAY, rr2, 1, border_radius=2)
+
+        # P1 base: LEFT-CENTER
+        br1 = pygame.Rect(FX + 105, FY + FS // 2 - CONFIG["base_size"] // 2 + 150,
+                          CONFIG["base_size"], CONFIG["base_size"])
+        pygame.draw.rect(surf, ALLIANCE_BLUE, br1, 2, border_radius=3)
+        lbl = f_small.render("BASE", True, ALLIANCE_BLUE)
+        surf.blit(lbl, (br1.centerx - lbl.get_width() // 2,
+                        br1.centery - lbl.get_height() // 2))
+        # P2 base: RIGHT-CENTER
+        br2 = pygame.Rect(FX + FS - CONFIG["base_size"] - 105,
+                          FY + FS // 2 - CONFIG["base_size"] // 2 + 150,
+                          CONFIG["base_size"], CONFIG["base_size"])
+        pygame.draw.rect(surf, ALLIANCE_RED, br2, 2, border_radius=3)
+        lbl = f_small.render("BASE", True, ALLIANCE_RED)
+        surf.blit(lbl, (br2.centerx - lbl.get_width() // 2,
+                        br2.centery - lbl.get_height() // 2))
+    else:
+        gr = pygame.Rect(FX + FS // 2 - CONFIG["goal_w"] // 2, FY,
+                         CONFIG["goal_w"], CONFIG["goal_h"])
+        pygame.draw.rect(surf, GOAL_DARK, gr, border_radius=4)
+        pygame.draw.rect(surf, GOAL_GOLD, gr, 2, border_radius=4)
+        lbl = f_small.render("GOAL", True, GOAL_GOLD)
+        surf.blit(lbl, (gr.centerx - lbl.get_width() // 2, gr.centery - lbl.get_height() // 2))
+
+        rr = pygame.Rect(gr.x, gr.bottom + 5, gr.w, CONFIG["ramp_h"])
+        pygame.draw.rect(surf, RAMP_DARK, rr, border_radius=2)
+        pygame.draw.rect(surf, GRAY, rr, 1, border_radius=2)
+
+        gt = pygame.Rect(rr.right - 18, rr.y, 18, rr.h)
+        pygame.draw.rect(surf, GATE_COLOR, gt, border_radius=2)
+        pygame.draw.rect(surf, WHITE, gt, 1, border_radius=2)
+        lbl = f_tiny.render("GATE", True, GOLD)
+        surf.blit(lbl, (gt.centerx - lbl.get_width() // 2, gt.y - 13))
+
+        dr = pygame.Rect(gr.x, gr.bottom + 5 + CONFIG["ramp_h"] + 3, gr.w, CONFIG["depot_h"])
+        pygame.draw.rect(surf, (40, 38, 35), dr, border_radius=2)
+        pygame.draw.rect(surf, GRAY, dr, 1, border_radius=2)
+        lbl = f_tiny.render("DEPOT", True, GRAY)
+        surf.blit(lbl, (dr.centerx - lbl.get_width() // 2, dr.centery - lbl.get_height() // 2))
 
     cols = [FX + FS // 2 - 50]
     rows = [FY + 280, FY + 360, FY + 440]
@@ -346,9 +443,10 @@ def _build_field_surface():
 
 def _invalidate_field_cache():
     """Force the field cache to rebuild on next draw."""
-    global _field_surface, _field_cache_park
+    global _field_surface, _field_cache_park, _cached_game_mode
     _field_surface = None
     _field_cache_park = None
+    _cached_game_mode = None
 
 
 # ============================================================
@@ -358,8 +456,8 @@ def draw_field(screen, state):
     """Draw the field: background + cached static elements + dynamic overlays."""
     global _field_surface, _field_cache_park
 
-    if _field_surface is None:
-        _build_field_surface()
+    if _field_surface is None or _cached_game_mode != state.game_mode:
+        _build_field_surface(state.game_mode)
 
     # ── Background: normal charcoal floor or chaos grid ───────────────
     if state.chaos_active:
@@ -374,12 +472,13 @@ def draw_field(screen, state):
     screen.blit(_field_surface, (0, 0))
 
     # --- Drive mode badge (always dynamic) ---
-    mode = state.robot.drive_mode.upper()
-    lbl = f_tiny.render(f"DRIVE: {mode}", True, ZENITH_ACCENT)
-    badge_rect = pygame.Rect(FX + 4, FY + 4, lbl.get_width() + 8, lbl.get_height() + 4)
-    pygame.draw.rect(screen, ZENITH_DARK, badge_rect, border_radius=3)
-    pygame.draw.rect(screen, ZENITH_PURPLE, badge_rect, 1, border_radius=3)
-    screen.blit(lbl, (FX + 8, FY + 6))
+    if state.game_mode != "1v1":
+        mode = state.robot.drive_mode.upper()
+        lbl = f_tiny.render(f"DRIVE: {mode}", True, ZENITH_ACCENT)
+        badge_rect = pygame.Rect(FX + 4, FY + 4, lbl.get_width() + 8, lbl.get_height() + 4)
+        pygame.draw.rect(screen, ZENITH_DARK, badge_rect, border_radius=3)
+        pygame.draw.rect(screen, ZENITH_PURPLE, badge_rect, 1, border_radius=3)
+        screen.blit(lbl, (FX + 8, FY + 6))
 
     # --- Base zone park status ---
     br = state.base_rect()
@@ -398,32 +497,65 @@ def draw_field(screen, state):
         screen.blit(glow_s, (br.x, br.y))
         pygame.draw.rect(screen, PARK_GREEN, br, 3, border_radius=3)
 
-    # --- Ramp slot fill ---
-    rr = state.ramp_rect()
-    slot_w = (rr.w - 8) // CONFIG["ramp_slots"]
-    for i in range(CONFIG["ramp_slots"]):
-        sx = rr.x + 4 + i * slot_w
-        sr = pygame.Rect(sx, rr.y + 1, slot_w - 1, rr.h - 2)
-        if state.team.ramp[i] is not None:
-            c = GREEN if state.team.ramp[i] == "G" else PURPLE
-            pygame.draw.rect(screen, c, sr, border_radius=2)
-        else:
-            pygame.draw.rect(screen, SLOT_EMPTY, sr, border_radius=2)
-        pygame.draw.rect(screen, SLOT_BORDER, sr, 1, border_radius=2)
+    # --- Ramp slot fill + Gate state ---
+    if state.game_mode == "1v1" and state.team2 is not None:
+        # P1 ramp slots (vertical, right side)
+        rr1 = state.ramp_rect(team="p1")
+        slot_h = (rr1.h - 8) // CONFIG["ramp_slots"]
+        for i in range(CONFIG["ramp_slots"]):
+            sy = rr1.y + 4 + i * slot_h
+            sr = pygame.Rect(rr1.x + 1, sy, rr1.w - 2, slot_h - 1)
+            if state.team.ramp[i] is not None:
+                c = GREEN if state.team.ramp[i] == "G" else PURPLE
+                pygame.draw.rect(screen, c, sr, border_radius=2)
+            else:
+                pygame.draw.rect(screen, SLOT_EMPTY, sr, border_radius=2)
+            pygame.draw.rect(screen, SLOT_BORDER, sr, 1, border_radius=2)
+        # P1 gate (top of vertical ramp)
+        gt1 = state.gate_rect(team="p1")
+        gc1 = GATE_OPEN_COLOR if state.team.gate_open else GATE_COLOR
+        pygame.draw.rect(screen, gc1, gt1, border_radius=2)
+        pygame.draw.rect(screen, WHITE, gt1, 1, border_radius=2)
 
-    # --- Gate state ---
-    gt = state.gate_rect()
-    team2 = state.team2
-    gate_open = state.team.gate_open
-    if state.game_mode == "1v1" and team2 is not None:
-        gate_open = state.team.gate_open or team2.gate_open
-    gc = GATE_OPEN_COLOR if gate_open else GATE_COLOR
-    pygame.draw.rect(screen, gc, gt, border_radius=2)
-    pygame.draw.rect(screen, WHITE, gt, 1, border_radius=2)
-    gl = "OPEN" if gate_open else "GATE"
-    gc2 = GATE_OPEN_COLOR if gate_open else GOLD
-    lbl = f_tiny.render(gl, True, gc2)
-    screen.blit(lbl, (gt.centerx - lbl.get_width() // 2, gt.y - 13))
+        # P2 ramp slots (vertical, right side)
+        rr2 = state.ramp_rect(team="p2")
+        for i in range(CONFIG["ramp_slots"]):
+            sy = rr2.y + 4 + i * slot_h
+            sr = pygame.Rect(rr2.x + 1, sy, rr2.w - 2, slot_h - 1)
+            if state.team2.ramp[i] is not None:
+                c = GREEN if state.team2.ramp[i] == "G" else PURPLE
+                pygame.draw.rect(screen, c, sr, border_radius=2)
+            else:
+                pygame.draw.rect(screen, SLOT_EMPTY, sr, border_radius=2)
+            pygame.draw.rect(screen, SLOT_BORDER, sr, 1, border_radius=2)
+        # P2 gate (bottom of vertical ramp)
+        gt2 = state.gate_rect(team="p2")
+        gc2 = GATE_OPEN_COLOR if state.team2.gate_open else GATE_COLOR
+        pygame.draw.rect(screen, gc2, gt2, border_radius=2)
+        pygame.draw.rect(screen, WHITE, gt2, 1, border_radius=2)
+    else:
+        # Solo: single ramp + gate
+        rr = state.ramp_rect()
+        slot_w = (rr.w - 8) // CONFIG["ramp_slots"]
+        for i in range(CONFIG["ramp_slots"]):
+            sx = rr.x + 4 + i * slot_w
+            sr = pygame.Rect(sx, rr.y + 1, slot_w - 1, rr.h - 2)
+            if state.team.ramp[i] is not None:
+                c = GREEN if state.team.ramp[i] == "G" else PURPLE
+                pygame.draw.rect(screen, c, sr, border_radius=2)
+            else:
+                pygame.draw.rect(screen, SLOT_EMPTY, sr, border_radius=2)
+            pygame.draw.rect(screen, SLOT_BORDER, sr, 1, border_radius=2)
+
+        gt = state.gate_rect()
+        gate_open = state.team.gate_open
+        gc = GATE_OPEN_COLOR if gate_open else GATE_COLOR
+        pygame.draw.rect(screen, gc, gt, border_radius=2)
+        pygame.draw.rect(screen, WHITE, gt, 1, border_radius=2)
+        gl = "OPEN" if gate_open else "GATE"
+        gc2 = GATE_OPEN_COLOR if gate_open else GOLD
+        lbl = f_tiny.render(gl, True, gc2)
+        screen.blit(lbl, (gt.centerx - lbl.get_width() // 2, gt.y - 13))
 
 
 # ============================================================
@@ -735,6 +867,15 @@ def _draw_hud_1v1(screen, state, t=0.0):
                              state.intake_active2, state.intake_heat2,
                              state.intake_overheated2, state.intake_cooldown_timer2,
                              state, y, ALLIANCE_RED, in_zone=p2_in_zone)
+
+    # Drive mode badge at bottom of HUD
+    y = after_p2 + 4
+    mode = state.robot.drive_mode.upper()
+    lbl = f_tiny.render(f"DRIVE: {mode}", True, ZENITH_ACCENT)
+    badge_rect = pygame.Rect(HX + 18, y, lbl.get_width() + 8, lbl.get_height() + 4)
+    pygame.draw.rect(screen, ZENITH_DARK, badge_rect, border_radius=3)
+    pygame.draw.rect(screen, ZENITH_PURPLE, badge_rect, 1, border_radius=3)
+    screen.blit(lbl, (HX + 22, y + 2))
 
     # Winner indicator at match end
     if state.phase == "FINISHED":

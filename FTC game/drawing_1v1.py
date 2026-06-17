@@ -8,7 +8,7 @@ import pygame
 import drawing as _d
 from config import (
     CONFIG, FX, FY, FS,
-    SOFT_WHITE, ALLIANCE_RED,
+    SOFT_WHITE, ALLIANCE_RED, ALLIANCE_BLUE,
 )
 from drawing import (
     _build_robot_surface,
@@ -44,7 +44,7 @@ def draw_field_1v1_extras(screen, state):
     if state.game_mode != "1v1":
         return
 
-    # P2 base zone (mirrored, right-center of field)
+    # P2 base zone (right-center of field)
     br2 = state.base_rect2()
     base_fill = pygame.Surface((br2.w, br2.h), pygame.SRCALPHA)
     base_fill.fill((ALLIANCE_RED[0], ALLIANCE_RED[1], ALLIANCE_RED[2], 50))
@@ -63,11 +63,12 @@ def draw_field_1v1_extras(screen, state):
     lbl = _d.f_small.render("BASE", True, ALLIANCE_RED)
     screen.blit(lbl, (br2.centerx - lbl.get_width() // 2, br2.centery - lbl.get_height() // 2))
 
-    # P2 loading zone (mirrored, top-right — white like P1's)
+    # P2 loading zone: BOTTOM-RIGHT, red border
     lr2 = state.loading_rect2()
     s2 = pygame.Surface((lr2.w, lr2.h), pygame.SRCALPHA)
     s2.fill((60, 60, 70, 60))
     screen.blit(s2, (lr2.x, lr2.y))
-    pygame.draw.rect(screen, SOFT_WHITE, lr2, 2, border_radius=3)
-    lbl = _d.f_tiny.render("LOAD ZONE", True, SOFT_WHITE)
-    screen.blit(lbl, (lr2.centerx - lbl.get_width() // 2, lr2.centery - lbl.get_height() // 2))
+    pygame.draw.rect(screen, ALLIANCE_RED, lr2, 2, border_radius=3)
+    lbl = _d.f_tiny.render("LOAD ZONE", True, ALLIANCE_RED)
+    screen.blit(lbl, (lr2.centerx - lbl.get_width() // 2,
+                      lr2.centery - lbl.get_height() // 2))

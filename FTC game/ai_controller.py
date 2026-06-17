@@ -148,7 +148,7 @@ def update_ai(state, dt):
         if nearest_art is not None:
             _rotate_toward(r, nearest_art.x, nearest_art.y, dt)
     elif _ai_state == "GATE":
-        gt = state.gate_rect()
+        gt = state.gate_rect(team="p2")
         _rotate_toward(r, gt.centerx, gt.centery, dt)
 
     # Reaction timer — gates FSM state transitions only
@@ -185,9 +185,7 @@ def update_ai(state, dt):
             _pos_history.clear()
         else:
             half = CONFIG["robot_size"] // 2
-            g = state.goal_rect()
-            depot = state.depot_rect()
-            obs = pygame.Rect(g.left, g.top, g.w, depot.bottom - g.top)
+            obs_list = state.all_obstacle_rects()
             _stuck_dir_timer -= dt
             if _stuck_dir_timer <= 0:
                 for _ in range(len(_STUCK_DIRS)):
@@ -197,7 +195,7 @@ def update_ai(state, dt):
                     test_y = r.y + dy * r.speed * 0.7 * _STUCK_DIR_DUR
                     test_rect = pygame.Rect(test_x - half, test_y - half,
                                             CONFIG["robot_size"], CONFIG["robot_size"])
-                    if not test_rect.colliderect(obs):
+                    if not any(test_rect.colliderect(o) for o in obs_list):
                         break
                 _stuck_dir_timer = _STUCK_DIR_DUR
             dx, dy = _STUCK_DIRS[_stuck_dir_idx]
@@ -254,7 +252,7 @@ def _state_collect(state, r, dt, profile):
 
     g = state.goal_rect()
     d_rect = state.depot_rect()
-    obs = pygame.Rect(g.left, g.top, g.w, d_rect.bottom - g.top)
+    obs_list = state.all_obstacle_rects()
 
     nearest = state.nearest_artifact(r.x, r.y, profile["radius"])
 
@@ -264,7 +262,7 @@ def _state_collect(state, r, dt, profile):
     if nearest is not None:
         tx, ty = nearest.x, nearest.y
         d = math.hypot(tx - r.x, ty - r.y)
-        _move_toward(r, tx, ty, r.speed * profile["speed_mult"], dt, obs, profile)
+        _move_toward(r, tx, ty, r.speed * profile["speed_mult"], dt, obs_list, profile)
         if d < CONFIG["ai_intake_start_distance"]:
             state.intake_active2 = not state.intake_overheated2
             if not state.intake_overheated2 and r.can_pickup() and _in_front_cone(r, tx, ty):
@@ -301,9 +299,7 @@ def _point_in_triangle(pt, v1, v2, v3):
 
 
 def _nearest_launch_point(state, r):
-    g = state.goal_rect()
-    d = state.depot_rect()
-    obs = pygame.Rect(g.left, g.top, g.w, d.bottom - g.top)
+    obs_list = state.all_obstacle_rects()
     half = CONFIG["robot_size"] // 2
     sz = CONFIG["robot_size"]
 
@@ -348,13 +344,11 @@ def _state_navigate(state, r, dt, profile):
 
     state.intake_active2 = False
 
-    g = state.goal_rect()
-    d_rect = state.depot_rect()
-    obs = pygame.Rect(g.left, g.top, g.w, d_rect.bottom - g.top)
+    obs_list = state.all_obstacle_rects()
 
     tx, ty = _nearest_launch_point(state, r)
     _rotate_toward(r, tx, ty, dt)
-    _move_toward(r, tx, ty, r.speed * profile["speed_mult"], dt, obs, profile)
+    _move_toward(r, tx, ty, r.speed * profile["speed_mult"], dt, obs_list, profile)
 
     if state.in_launch_zone2(r.x, r.y):
         _ai_state = "LAUNCH"
@@ -384,14 +378,12 @@ def _state_park(state, r, dt, profile):
 
     state.intake_active2 = False
 
-    g = state.goal_rect()
-    d_rect = state.depot_rect()
-    obs = pygame.Rect(g.left, g.top, g.w, d_rect.bottom - g.top)
+    obs_list = state.all_obstacle_rects()
 
     br = state.base_rect2()
     tx, ty = br.centerx, br.centery
     _rotate_toward(r, tx, ty, dt)
-    _move_toward(r, tx, ty, r.speed * profile["speed_mult"], dt, obs, profile)
+    _move_toward(r, tx, ty, r.speed * profile["speed_mult"], dt, obs_list, profile)
 
     if len(r.holding) > 0 and state.in_launch_zone2(r.x, r.y):
         _launch_held(state, r, state.team2)
@@ -407,7 +399,7 @@ def _state_gate(state, r, dt, profile):
 
     state.intake_active2 = False
 
-    gt = state.gate_rect()
+    gt = state.gate_rect(team="p2")
     gate_d = math.hypot(gt.centerx - r.x, gt.centery - r.y)
 
     ai_gate_range = profile.get("gate_range", CONFIG["gate_range"])
@@ -420,9 +412,8 @@ def _state_gate(state, r, dt, profile):
         return
 
     half = CONFIG["robot_size"] // 2
-    depot = state.depot_rect()
-    g = state.goal_rect()
-    obs = pygame.Rect(g.left, g.top, g.w, depot.bottom - g.top)
+    obs_list = state.all_obstacle_rects()
+    obs = state.ramp_rect(team="p2") if state.game_mode == "1v1" else pygame.Rect(state.goal_rect().left, state.goal_rect().top, state.goal_rect().w, state.depot_rect().bottom - state.goal_rect().top)
 
     # Approach safely from the right side of the obstacle, slightly further out
     approach_x = obs.right + half + 20
@@ -500,90 +491,142 @@ def _move_toward(r, tx, ty, speed, dt, obs_rect=None, profile=None):
     r.vx = (dx / d) * speed
     r.vy = (dy / d) * speed
 
+    # Accept both a single rect and a list of rects
     if obs_rect is not None:
+        if isinstance(obs_rect, list):
+            obs_list = obs_rect
+        else:
+            obs_list = [obs_rect]
+    else:
+        obs_list = []
+
+    if obs_list:
         half = CONFIG["robot_size"] // 2
 
-        # hard_obs: The absolute physical boundary where the robot's CENTER cannot go
-        hard_obs = pygame.Rect(obs_rect.left - half, obs_rect.top - half,
-                               obs_rect.w + 2 * half, obs_rect.h + 2 * half)
+        # Find the closest obstacle that blocks our path
+        best_obs = None
+        best_dist = float('inf')
+        for o in obs_list:
+            hard_o = pygame.Rect(o.left - half, o.top - half,
+                                o.w + 2 * half, o.h + 2 * half)
+            # Check if target or path is near this obstacle
+            if hard_o.collidepoint(tx, ty) or _line_crosses_rect(r.x, r.y, tx, ty, hard_o):
+                cdx = o.centerx - r.x
+                cdy = o.centery - r.y
+                dist_sq = cdx * cdx + cdy * cdy
+                if dist_sq < best_dist:
+                    best_dist = dist_sq
+                    best_obs = o
 
-        # 1. Clamp target destination if it sits inside the wall's radius.
-        ctx, cty = tx, ty
-        if hard_obs.collidepoint(tx, ty):
-            dl = tx - hard_obs.left
-            dr = hard_obs.right - tx
-            dt_top = ty - hard_obs.top
-            db = hard_obs.bottom - ty
-            min_d = min(dl, dr, dt_top, db)
+        if best_obs is not None:
+            obs_rect = best_obs
+            hard_obs = pygame.Rect(obs_rect.left - half, obs_rect.top - half,
+                                   obs_rect.w + 2 * half, obs_rect.h + 2 * half)
 
-            if min_d == dl:
-                ctx = hard_obs.left
-            elif min_d == dr:
-                ctx = hard_obs.right
-            elif min_d == dt_top:
-                cty = hard_obs.top
-            else:
-                cty = hard_obs.bottom
+            # Field bounds for clamping to ensure targets are physically reachable
+            min_x = FX + half
+            max_x = FX + FS - half
+            min_y = FY + half
+            max_y = FY + FS - half
 
-        # 2. Check if the direct line to the clamped target clips the obstacle.
-        # Shrink by 2px to allow sliding exactly on the edge without panicking.
-        check_obs = pygame.Rect(hard_obs.left + 2, hard_obs.top + 2,
-                                hard_obs.w - 4, hard_obs.h - 4)
+            ctx, cty = tx, ty
+            target_modified = False
 
-        override_velocity = False
-        safe_x, safe_y = ctx, cty
+            # If the target is inside the expanded obstacle, snap to the closest edge
+            if hard_obs.collidepoint(tx, ty):
+                dl = tx - hard_obs.left
+                dr = hard_obs.right - tx
+                dt_top = ty - hard_obs.top
+                db = hard_obs.bottom - ty
+                min_d = min(dl, dr, dt_top, db)
 
-        if _line_crosses_rect(r.x, r.y, ctx, cty, check_obs):
-            # We are going to snag the corner. Force an orthogonal route.
-            clearance = 20
-            safe_left = hard_obs.left - clearance
-            safe_right = hard_obs.right + clearance
-            safe_bottom = hard_obs.bottom + clearance
+                if min_d == dl:
+                    ctx = hard_obs.left
+                elif min_d == dr:
+                    ctx = hard_obs.right
+                elif min_d == dt_top:
+                    cty = hard_obs.top
+                else:
+                    cty = hard_obs.bottom
 
-            target_is_left = ctx < obs_rect.centerx
-            robot_is_left = r.x < obs_rect.centerx
+                # Clamp the projected target to stay on the field!
+                ctx = clamp(ctx, min_x, max_x)
+                cty = clamp(cty, min_y, max_y)
+                target_modified = True
 
-            if target_is_left != robot_is_left:
-                # CROSSING SIDES: The top is blocked by the arena wall.
-                # We MUST route in a U-Shape underneath the obstacle.
-                if r.y < safe_bottom - 5:
-                    # Move straight down your current side until clear of the bottom
-                    safe_x = safe_left if robot_is_left else safe_right
-                    safe_y = safe_bottom
+            check_obs = pygame.Rect(hard_obs.left + 2, hard_obs.top + 2,
+                                    hard_obs.w - 4, hard_obs.h - 4)
+
+            override_velocity = False
+            safe_x, safe_y = ctx, cty
+
+            # Path blocked? Find the best corner to route around
+            if _line_crosses_rect(r.x, r.y, ctx, cty, check_obs):
+                clearance = 25
+                sl = max(min_x, hard_obs.left - clearance)
+                sr = min(max_x, hard_obs.right + clearance)
+                st = max(min_y, hard_obs.top - clearance)
+                sb = min(max_y, hard_obs.bottom + clearance)
+
+                corners = [
+                    (sl, st), (sr, st),
+                    (sl, sb), (sr, sb)
+                ]
+
+                best_corner = None
+                best_cost = float('inf')
+
+                for cx, cy in corners:
+                    # Cost heuristic: distance via this corner
+                    cost = math.hypot(cx - r.x, cy - r.y) + math.hypot(ctx - cx, cty - cy)
+                    # Heavy penalty if path to corner still crosses obstacle
+                    if _line_crosses_rect(r.x, r.y, cx, cy, check_obs):
+                        cost += 10000
+                    # Moderate penalty if corner to target crosses obstacle (allows multi-step routing)
+                    if _line_crosses_rect(cx, cy, ctx, cty, check_obs):
+                        cost += 5000
+
+                    if cost < best_cost:
+                        best_cost = cost
+                        best_corner = (cx, cy)
+
+                if best_corner is not None and best_cost < 10000:
+                    safe_x, safe_y = best_corner
                     override_velocity = True
                 else:
-                    # Clear of the bottom! Now cross horizontally to the target's side
-                    safe_x = safe_left if target_is_left else safe_right
-                    safe_y = safe_bottom
-                    override_velocity = True
-            else:
-                # SAME SIDE: We are just snagging the corner while reaching for a close artifact.
-                if r.y < safe_bottom - 5 and cty > safe_bottom:
-                    # Moving vertically down past the corner
-                    safe_x = safe_left if robot_is_left else safe_right
-                    safe_y = safe_bottom
-                    override_velocity = True
-                elif r.y > safe_bottom - 5 and cty < safe_bottom:
-                    # Moving vertically up from below the corner
-                    safe_x = safe_left if robot_is_left else safe_right
-                    safe_y = safe_bottom
-                    override_velocity = True
-                else:
-                    # Both are above safe_bottom, or both are below safe_bottom.
-                    # Pull away from the wall horizontally to stop scraping.
-                    safe_x = safe_left if robot_is_left else safe_right
-                    safe_y = r.y
+                    # Fallback to nearest edge clamped to field bounds
+                    if abs(r.x - obs_rect.centerx) > abs(r.y - obs_rect.centery):
+                        safe_x = sl if r.x < obs_rect.centerx else sr
+                        safe_y = r.y
+                    else:
+                        safe_x = r.x
+                        safe_y = st if r.y < obs_rect.centery else sb
+                    safe_x = clamp(safe_x, min_x, max_x)
+                    safe_y = clamp(safe_y, min_y, max_y)
                     override_velocity = True
 
-        # Apply override velocity if we are navigating around a corner
-        if override_velocity:
-            sdx = safe_x - r.x
-            sdy = safe_y - r.y
-            sd = math.hypot(sdx, sdy)
-            # Only override if we aren't already at the safe waypoint
-            if sd > 2.0:
-                r.vx = (sdx / sd) * speed
-                r.vy = (sdy / sd) * speed
+            # Apply velocity based on routing decisions
+            if override_velocity:
+                sdx = safe_x - r.x
+                sdy = safe_y - r.y
+                sd = math.hypot(sdx, sdy)
+                if sd > 2.0:
+                    r.vx = (sdx / sd) * speed
+                    r.vy = (sdy / sd) * speed
+                else:
+                    r.vx = 0.0
+                    r.vy = 0.0
+            elif target_modified:
+                # The target was inside the obstacle, but the path to its edge is clear
+                sdx = ctx - r.x
+                sdy = cty - r.y
+                sd = math.hypot(sdx, sdy)
+                if sd > 2.0:
+                    r.vx = (sdx / sd) * speed
+                    r.vy = (sdy / sd) * speed
+                else:
+                    r.vx = 0.0
+                    r.vy = 0.0
 
     r.x += r.vx * dt
     r.y += r.vy * dt

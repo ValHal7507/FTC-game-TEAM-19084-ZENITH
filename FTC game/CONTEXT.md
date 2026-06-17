@@ -234,7 +234,7 @@ Font access: uses `import drawing as _drawing` then `_drawing.f_huge.render(...)
 | `fps` | 144 | Target frames per second |
 | `teleop_time` | 120 | Match duration in seconds |
 | `endgame_time` | 20 | Last N seconds where phase shows "ENDGAME" |
-| `robot_speed` | 280 | Robot movement speed (px/s) |
+| `robot_speed` | 560 | Robot movement speed (px/s) |
 | `robot_size` | 60 | Robot square side length (px) |
 | `flying_speed` | 350 | Launched artifact travel speed (px/s) |
 | `pickup_radius` | 45 | Max distance to pick up an artifact |
@@ -253,12 +253,14 @@ Font access: uses `import drawing as _drawing` then `_drawing.f_huge.render(...)
 | `artifact_artifact_bounce` | 0.50 | Artifact-artifact restitution |
 | `artifact_min_speed` | 4.0 | Speed below which artifacts stop |
 | `robot_push_force` | 600.0 | Push force when robot contacts artifact |
-| `artifact_radius` | 7 | Radius of artifact circles |
+| `artifact_radius` | 10 | Radius of artifact circles (1.5× default) |
 | `goal_w` | 130 | Goal rectangle width |
 | `goal_h` | 142 | Goal rectangle height |
 | `loading_zone_size` | 100 | Loading zone square size |
 | `base_size` | 80 | Base zone square size |
-| `shooting_zone_size` | 220 | Shooting zone triangle hypotenuse width (px) |
+| `shooting_zone_size` | 220 | Shooting zone triangle hypotenuse width (visual, px) |
+| `shooting_zone_detect_size` | 320 | Shooting zone detection triangle (larger than visual, px) |
+| `pickup_radius_human` | 65 | Pickup radius for human-controlled robots (larger than default) |
 | `spike_cols` | 1 | Spike mark columns per player side |
 | `spike_rows` | 3 | Spike mark rows |
 | `ramp_h` | 14 | Ramp rectangle height (px) |
@@ -280,6 +282,23 @@ Font access: uses `import drawing as _drawing` then `_drawing.f_huge.render(...)
 | `HX`, `HW` | 730, 320 | HUD panel left edge and width |
 
 **Helpers**: `dist(a, b)`, `clamp(v, lo, hi)`, `lerp(a, b, t)`
+
+**Chaos mode constants:**
+| Constant | Value | Usage |
+|---|---|---|
+| `CHAOS_SEQUENCE` | `[UP, UP, DOWN, DOWN, LEFT, RIGHT, LEFT, RIGHT, Z, X]` | Konami code key sequence to activate chaos mode |
+| `CHAOS_SPEED_MULT` | `1.0` | Chaos mode speed multiplier (currently disabled; chaos still doubles final score via `TeamState.total_score()`) |
+| `CHAOS_BG` | `(10, 0, 25)` | Chaos mode dark background fill |
+| `CHAOS_GRID` | `(90, 0, 130)` | Chaos mode grid line color |
+| `CHAOS_STREAK` | `(160, 0, 60)` | Chaos mode diagonal speed-line streaks |
+| `CHAOS_FLASH` | `(255, 40, 40)` | Chaos mode activation screen flash |
+| `CHAOS_ZONE_TINT` | `(120, 0, 40, 60)` | Chaos mode zone tint overlay (RGBA, semi-transparent) |
+| `CHAOS_TEXT_A` | `(255, 60, 0)` | Chaos mode splash text primary (orange-red) |
+| `CHAOS_TEXT_B` | `(200, 0, 100)` | Chaos mode splash text secondary (magenta) |
+| `CHAOS_PARTICLE_A` | `(255, 0, 160)` | Chaos particle color A (hot pink) |
+| `CHAOS_PARTICLE_B` | `(255, 120, 0)` | Chaos particle color B (orange) |
+| `CHAOS_DOT_FILLED` | `(160, 60, 220)` | Konami progress dot: correct key entered |
+| `CHAOS_DOT_EMPTY` | `(70, 70, 70)` | Konami progress dot: still needed |
 
 **Backward-compatible aliases**: `W, H = VW, VH` (used by drawing.py, menu.py)
 
@@ -304,147 +323,10 @@ Font access: uses `import drawing as _drawing` then `_drawing.f_huge.render(...)
 **Module-level helpers:**
 - `_sign(p1, p2, p3)` — Signed area of triangle (p1, p2, p3). Used for point-in-triangle test.
 - `_point_in_triangle(pt, v1, v2, v3)` — Return True if pt is inside triangle defined by v1, v2, v3 (sign-of-cross-product method).
+- `get_ramp_scatter_positions(state, team_id=None)` → `List[Tuple[float, float]]` — Returns positions for gate-release teleport. In 1v1, `team_id` routes artifacts to that team's loading zone only ("p1" → left, "p2" → right). In solo, returns spike + both loading zones.
 
-#### `Artifact`
-| Field | Type | Default | Description |
-|---|---|---|---|
-| `x` | `float` | — | Position on canvas |
-| `y` | `float` | — | Position on canvas |
-| `color` | `str` | — | `"P"` (purple) or `"G"` (green) |
-| `vx` | `float` | `0.0` | 2D velocity for physics integration |
-| `vy` | `float` | `0.0` | 2D velocity for physics integration |
-| `on_field` | `bool` | `True` | `True` if available for pickup |
-| `zone` | `str` | `"spike"` | `"spike"`, `"loading"`, or `"alliance"` |
-| `respawn_timer` | `float` | `0.0` | Unused (no respawning) |
-| `index` | `int` | `0` | Position within spike zone |
-
-#### `FlyingArtifact`
-| Field | Type | Default | Description |
-|---|---|---|---|
-| `x` | `float` | — | Current position (animated toward target) |
-| `y` | `float` | — | Current position |
-| `target_x` | `float` | — | Goal center X |
-| `target_y` | `float` | — | Goal center Y |
-| `color` | `str` | — | Artifact color |
-| `speed` | `float` | `CONFIG["flying_speed"]` | Travel speed |
-| `active` | `bool` | `True` | Whether artifact is in flight |
-| `trail` | `List[Tuple]` | `[]` | Recent positions for trail rendering (capped at `MAX_TRAIL`) |
-| `scoring` | `bool` | `True` | `True` if launched from launch zone |
-| `full_set` | `bool` | `False` | `True` if robot held 3 artifacts at launch |
-| `team` | `str` | `"p1"` | `"p1"` or `"p2"` — determines which `TeamState` scores |
-| `MAX_TRAIL` | `ClassVar[int]` | `18` | Max trail length (class variable) |
-
-#### `GateClearAnim`
-| Field | Type | Default | Description |
-|---|---|---|---|
-| `x` | `float` | — | Animation start X |
-| `y` | `float` | — | Animation start Y |
-| `target_x` | `float` | — | Animation end X |
-| `target_y` | `float` | — | Animation end Y |
-| `color` | `str` | — | Artifact color being cleared |
-| `progress` | `float` | `0.0` | Animation progress (0.0 to 1.0) |
-| `active` | `bool` | `True` | Whether animation is still running |
-
-#### `Robot`
-| Field | Type | Default | Description |
-|---|---|---|---|
-| `x` | `float` | — | Position on canvas |
-| `y` | `float` | — | Position on canvas |
-| `speed` | `float` | `CONFIG["robot_speed"]` | Movement speed (px/s) |
-| `angle` | `float` | `0.0` | Facing direction (0 = up, radians) |
-| `turret_angle` | `float` | `0.0` | World-space radians, auto-updated toward goal each frame |
-| `vx` | `float` | `0.0` | Velocity from input (used for physics push) |
-| `vy` | `float` | `0.0` | Velocity from input |
-| `drive_mode` | `str` | `"field"` | `"robot"` or `"field"` |
-| `holding` | `List[Artifact]` | `[]` | Artifacts being carried (max 3) |
-| `start_x` | `float` | `0.0` | Initial position (set from `x` via `__post_init__`) |
-| `start_y` | `float` | `0.0` | Initial position (set from `y` via `__post_init__`) |
-| `alliance` | `str` | `"neutral"` | `"neutral"` (solo), `"blue"` (P1 in 1v1), or `"red"` (P2 in 1v1) |
-| `can_pickup()` | method | — | Returns `True` if `len(holding) < CONFIG["max_hold"]` |
-
-**`__post_init__`:** Sets `start_x = x` and `start_y = y` from the constructor position args.
-
-#### `TeamState`
-| Field | Type | Default | Description |
-|---|---|---|---|
-| `ramp` | `List[Optional[str]]` | `[None]*9` | Ramp slots (`None` = empty, `"P"`/`"G"` = occupied) |
-| `overflow_held` | `List[str]` | `[]` | Overflow artifacts stored in ramp (released on gate open) |
-| `gate_open` | `bool` | `False` | Gate state |
-| `gate_timer` | `float` | `0.0` | Gate auto-close countdown |
-| `classified` | `int` | `0` | Count of classified artifacts (+3 pts each) |
-| `overflow` | `int` | `0` | Count of overflow artifacts (+1 pt each) |
-| `depot` | `int` | `0` | Count of depot artifacts (+1 pt each) |
-| `pattern_pts` | `int` | `0` | Pattern match score (evaluated at match end) |
-| `base_pts` | `int` | `0` | Parking score (evaluated at match end) |
-
-**Methods:**
-| Method | Signature | Behavior |
-|---|---|---|
-| `total_score()` | `() -> int` | `classified×3 + overflow + depot + pattern_pts + base_pts`. |
-| `add_to_ramp(color)` | `(str) -> bool` | Place in first empty slot → classified++; else overflow_held.append → overflow++, depot++. Returns True if slot found. |
-| `clear_ramp()` | `-> List[str]` | Empties ramp + overflow_held, returns all colors |
-
-#### `GameState`
-| Field | Type | Default | Description |
-|---|---|---|---|
-| `phase` | `str` | `"TELEOP"` | `"TELEOP"` → `"ENDGAME"` → `"FINISHED"` |
-| `timer` | `float` | `CONFIG["teleop_time"]` | Seconds remaining |
-| `timer_running` | `bool` | `False` | Timer does NOT auto-start on launch or reset |
-| `motif` | `list` | random choice | `["G","P","P"]`, `["P","G","P"]`, or `["P","P","G"]` |
-| `motif_name` | `str` | joined motif | e.g., `"GPP"` |
-| `team` | `TeamState` | — | P1 scoring state |
-| `team2` | `TeamState` | `None` | P2 scoring state (1v1 only) |
-| `robot` | `Robot` | — | P1 robot (left-center, facing right) |
-| `robot2` | `Robot` | `None` | P2 robot (right-center, facing left; 1v1 only) |
-| `artifacts` | `List[Artifact]` | — | All artifacts (18 solo + 18 mirrored in 1v1 = 36 total) |
-| `flying` | `List[FlyingArtifact]` | `[]` | Active flying artifacts (shared by both players) |
-| `gate_clears` | `List[GateClearAnim]` | `[]` | Gate-clearing animations |
-| `secret_tunnel` | `tuple` | center of field | Center of field coordinates |
-| `scored` | `bool` | `False` | Scoring flag |
-| `park_status` | `str` | `"NONE"` | `"NONE"`, `"PARTIAL"`, or `"FULL"` (P1, live-updated) |
-| `park_status2` | `str` | `"NONE"` | `"NONE"`, `"PARTIAL"`, or `"FULL"` (P2, 1v1 only) |
-| `intake_active` | `bool` | `False` | P1 intake hold state |
-| `intake_heat` | `float` | `0.0` | P1 motor temperature (0.0 cold → 1.0 overheated) |
-| `intake_overheated` | `bool` | `False` | P1 10-second cooldown after full overheat |
-| `intake_cooldown_timer` | `float` | `0.0` | Seconds remaining in P1 overheat cooldown |
-| `intake_active2` | `bool` | `False` | P2 intake hold state (1v1 only) |
-| `intake_heat2` | `float` | `0.0` | P2 intake heat (1v1 only) |
-| `intake_overheated2` | `bool` | `False` | P2 intake overheat state (1v1 only) |
-| `intake_cooldown_timer2` | `float` | `0.0` | P2 intake cooldown timer (1v1 only) |
-| `pause_menu_index` | `int` | `0` | Selected pause menu button index |
-| `options_active` | `bool` | `False` | Whether Options screen is open |
-| `options_page` | `int` | `0` | Current Options tab (0 = keyboard, 1 = gamepad) |
-| `options_index` | `int` | `0` | Selected row in Options screen |
-| `options_rebinding` | `bool` | `False` | `True` when waiting for new key/button input |
-| `keybinds` | `dict` | defaults/saved | P1 key bindings |
-| `keybinds_p2` | `dict` | defaults | P2 key bindings (1v1 only) |
-| `game_mode` | `str` | constructor arg | `"solo"` or `"1v1"` |
-| `p1_device` | `str` | `"keyboard"` | Assigned P1 input device |
-| `p2_device` | `str` | `"gamepad1"` | Assigned P2 input device: `"gamepad0"`, `"gamepad1"`, or `"ai"` |
-| `pending_return` | `str \| None` | `None` | Set to `"menu"` by pause menu "Mode Select" action |
-
-**Methods:**
-| Method | Signature | Behavior |
-|---|---|---|
-| `_setup()` | `()` | Shared init logic called by `__init__` and `reset()`. Creates artifacts, rebuilds obstacle cache. In 1v1, skips loading keybinds JSON. |
-| `reset()` | `()` | Saves `game_mode`, `p1_device`, `p2_device`, calls `_setup()`, restores them. In 1v1, skips saving/restoring keybinds_p2. Imports and calls `reset_ai()` when in 1v1 mode to reset AI state. |
-| `_init_artifacts()` | `()` | Creates 18 base artifacts: 9 spike-mark (1 col × 3 rows), 3 loading-zone (PGP), 6 alliance-area (4P+2G random) |
-| `_add_1v1_artifacts()` | `()` | Adds 18 mirrored artifacts for P2's side (1v1 only) |
-| `goal_rect()` | `-> pygame.Rect` | Goal rectangle |
-| `ramp_rect()` | `-> pygame.Rect` | Ramp rectangle below goal |
-| `depot_rect()` | `-> pygame.Rect` | Depot rectangle below ramp |
-| `gate_rect()` | `-> pygame.Rect` | Gate rectangle on right side of ramp |
-| `loading_rect()` | `-> pygame.Rect` | Loading zone rectangle (top-left) |
-| `base_rect()` | `-> pygame.Rect` | Base/parking zone rectangle (left-center) |
-| `base_rect2()` | `-> pygame.Rect` | P2 base zone — horizontal mirror (right-center, 1v1 only) |
-| `loading_rect2()` | `-> pygame.Rect` | P2 loading zone — horizontal mirror (top-right, 1v1 only) |
-| `shooting_zone_triangle()` | `-> tuple` | Returns three vertices `(top, bl, br)` of the shooting zone triangle |
-| `in_launch_zone(x, y)` | `(float, float) -> bool` | Checks P1's launch zone (top triangle OR base/parking zone OR shooting zone) |
-| `in_launch_zone2(x, y)` | `(float, float) -> bool` | Checks P2's mirrored zones (1v1 only) |
-| `nearest_artifact(x, y, radius)` | `(float, float, float) -> Artifact \| None` | Finds closest pickup-able artifact within radius |
-
-**Module-level function:**
-- `get_ramp_scatter_positions(state)` → `List[Tuple[float, float]]` — Returns 15 positions (9 spike-mark + 6 loading zone for both sides) for gate-release teleport
+**All-obstacle rects for 1v1:**
+- `all_obstacle_rects()` in 1v1 mode returns 6 rects: 3 per player side (wall strip, triangle start position, doubled ramp). Depot is excluded. Used by `rebuild_obstacle_cache()` for robot/artifact constraint.
 
 ---
 
@@ -500,6 +382,13 @@ Three independent caches improve rendering performance:
 | `draw_match_end_buttons()` | `drawing.py` | Renders highlight on top of already-blitted match-end overlay buttons. |
 | `draw_pause_menu()` | `drawing.py` | Semi-transparent overlay with centered panel containing selectable buttons: Resume, Restart Game, Detect Gamepads, Options (hidden in 1v1), Mode Select, Quit. In 1v1 mode, only 5 buttons are shown (Options omitted). Highlighted button shown with lavender border (ZENITH_ACCENT). Navigation hint at bottom. Subtle ZENITH watermark at panel bottom. |
 | `draw_options_screen()` | `drawing.py` | Full-screen overlay for keybind customization (P1 only). Two tabs (KEYBOARD / GAMEPAD). Each tab lists all bindable actions with current binding and highlight for selected row. Supports rebinding pulse animation, duplicate binding warnings, locked binding indicators, and Reset to Default row. **Hidden in 1v1 mode**. |
+| `spawn_chaos_particles(state)` | `drawing.py` | Burst-spawn 60 particles on chaos activation. Public — imported by mode files. |
+| `update_chaos_particles(state, dt)` | `drawing.py` | Advance particles (position + gravity + life decay) and trickle-spawn replacements when count drops below 25. Public. |
+| `draw_chaos_particles(surf, state)` | `drawing.py` | Draw chaos particles with per-particle alpha fade. |
+| `draw_chaos_background(surf, t)` | `drawing.py` | Dark crimson-purple grid field with pulsing grid lines and diagonal speed-line streaks. Call INSTEAD of the normal background fill. |
+| `draw_chaos_zone_tint(surf)` | `drawing.py` | Overlay a red tint across the entire field area. Call AFTER zone shapes are drawn, BEFORE robots/artifacts. |
+| `draw_chaos_hud(surf, state, t)` | `drawing.py` | Flash, splash title ("⚡ CHAOS MODE ⚡"), mascot backflip cameo, and persistent pulsing badge. Call AFTER all normal HUD elements. |
+| `draw_konami_progress(surf, state)` | `drawing.py` | Dot row in top-right corner showing konami sequence progress. Filled purple = correct, grey ring = still needed. Self-guards when chaos is active or no keys pressed. |
 
 ---
 
@@ -570,9 +459,10 @@ from game_logic_p2 import (
 - Uses its own `pygame.time.Clock()` for independent dt calculation
 
 **Cached obstacle rect:**
-- `_cached_obs_rect` — module-level `pygame.Rect` storing the merged goal+depot obstacle
-- `rebuild_obstacle_cache(state)` — recomputes from `state.goal_rect()` and `state.depot_rect()`; called once in `GameState._setup()`
-- `_get_obs_rect()` — returns cached rect (with zero-size fallback if cache not yet built)
+- `_cached_obs_rect` — module-level `pygame.Rect` storing the merged obstacle bounding rect
+- `_cached_obs_rects` — list of individual obstacle rects from `all_obstacle_rects()` (used by both P1 and P2 constraint code)
+- `rebuild_obstacle_cache(state)` — recomputes from `state.all_obstacle_rects()` (in 1v1, excludes depot; in solo, includes goal + depot). Called once in `GameState._setup()`.
+- `_get_obs_rect()` — returns cached merged rect (with zero-size fallback if cache not yet built)
 
 **Scoring rules:**
 | Event | Points | Notes |
@@ -586,7 +476,7 @@ from game_logic_p2 import (
 **Physics details:**
 - Exponential friction: `v *= friction^dt` where `friction = 0.08` → near-instant stops
 - Field walls: restitution `0.45`, push out and reverse velocity component
-- Goal+depot obstacle: single merged rect (cached), artifacts pushed to nearest edge with bounce `0.45`; outside-edge collision via clamp-based normal push
+- Obstacle containment: artifacts pushed out of the merged obstacle rect (goal+depot in solo; robot start rects+ramps in 1v1) with bounce `0.45`; outside-edge collision via clamp-based normal push
 - Artifact–artifact: overlap separation `0.5` each, impulse with restitution `0.50`; **both-stationary early-exit**: skips pair entirely if both artifacts have zero velocity
 - Robot–artifact: overlap pushes artifact, impulse with restitution `0.90`; extra `push_force = 600` applied as velocity bias when speed is low
 - Robot–robot: AABB overlap on 60×60 rects, symmetric half-push on smallest overlap axis, iterative resolve (max 8), clamped to field bounds (1v1 only)
@@ -620,7 +510,7 @@ Processes all Pygame events once per frame. Supports keyboard and gamepad simult
 | `_handle_robot_drive(r, keys, dt, state)` | Process WASD movement in robot-oriented mode |
 | `_launch_held(state, r, team=None)` | Launch all held artifacts toward the goal. Optional `team` arg for P2 launching. |
 | `_toggle_gate(state, r, override_range=None)` | Toggle gate open if robot is within gate_range. Optional `override_range` parameter used by AI to specify custom interaction range. Acquires `_physics_lock` internally to serialize with physics thread. |
-| `_try_pickup(state, r, in_front)` | Attempt to pick up nearest artifact in front cone |
+| `_try_pickup(state, r, in_front, radius=None)` | Attempt to pick up nearest artifact in front cone. Optional `radius` defaults to `pickup_radius` (45); human callers pass `pickup_radius_human` (65). |
 | `_handle_gamepad(state, r, joy, events, dt, in_front)` | Process gamepad stick, trigger, and button input |
 | `_execute_pause_action(state, index)` | Execute selected pause menu action (Resume/Restart Game/Detect Gamepads/Options/Mode Select/Quit). In 1v1 mode, indices ≥ 3 are remapped (+1) to skip the hidden Options button. |
 
@@ -630,6 +520,9 @@ Processes all Pygame events once per frame. Supports keyboard and gamepad simult
 **Public aliases for AI / mode files:**
 - `launch_held` = `_launch_held`
 - `toggle_gate` = `_toggle_gate`
+
+**Chaos key sequence detection:**
+- `process_konami(events, state, wall_t)` — Detect the chaos key sequence during an active match. Call once per frame, passing the full event list. Advances `state.konami_progress` on correct keypresses. Works on both keyboard and any connected gamepad (hat + face buttons). Wrong key resets progress (but re-checks against sequence[0]). Sets `state.chaos_active` and records `wall_t` when sequence completes. No-ops if chaos is already active.
 
 **Joystick initialization:**
 - `init_joysticks(rescan=False)` — initializes all connected gamepads. If `rescan=True`, reinitializes the joystick subsystem for hot-plug support.
@@ -711,14 +604,14 @@ Processes all Pygame events once per frame. Supports keyboard and gamepad simult
 **Gate behavior:**
 - Press `T` (keyboard) or `X` (gamepad) within `gate_range` of the gate to open it
 - Gate toggle acquires `_physics_lock` to safely clear the ramp and scatter artifacts without racing the physics thread
-- All ramp artifacts + overflow_held teleport to random spike-mark or loading-zone positions with small random velocity
+- All ramp artifacts + overflow_held teleport to that team's loading zone positions with small random velocity (1v1: blue gate → left loading zone, red gate → right loading zone; solo: spike + loading zones)
 - Gate auto-closes after `gate_open_duration` seconds
 
 **Launch behavior:**
 - `Q`/left trigger works with any number of held artifacts
 - Launches all held as individual projectiles with random ±6px offset for visual separation
 - Each projectile independently reaches the goal and enters the ramp visually
-- Points (classified + overflow/depot) only count if robot was in launch zone (top triangle **OR** base/parking zone **OR** shooting zone triangle)
+- Points (classified + overflow/depot) only count if robot was in launch zone (top triangle **OR** base/parking zone **OR** shooting zone detection triangle — larger than visual for forgiving detection)
 - Outside all three zones = artifact fills ramp visually but awards absolutely 0 points
 - In 1v1, each player's launch uses their own `in_launch_zone` / `in_launch_zone2` check
 
@@ -759,13 +652,16 @@ Processes all Pygame events once per frame. Supports keyboard and gamepad simult
 **Module-level infrastructure:**
 - Duplicates `_get_obs_rect()` and `_set_obs_rect()` from `game_logic.py` to avoid forbidden cross-import
 - `_cached_obs_rect` — local copy of the merged goal+depot obstacle rect, synced from `game_logic.rebuild_obstacle_cache()` via `_set_obs_rect()`
+- `_cached_obs_rects` — local copy of the list of individual obstacle rects, synced via `_set_obs_rects()`
 - `_CONSTRAIN_MAX_ITER = 8` — same as `game_logic.py`
 
 **Functions:**
 | Function | Responsibility |
 |---|---|
 | `_set_obs_rect(rect)` | Update the cached obstacle rect. Called by `game_logic.rebuild_obstacle_cache`. |
+| `_set_obs_rects(rects)` | Update the cached list of individual obstacle rects. Called by `game_logic.rebuild_obstacle_cache`. |
 | `_get_obs_rect()` | Return the cached obstacle rect, falling back to zero-size if unset. |
+| `_get_obs_rects()` | Return the cached list of individual obstacle rects. Used by `constrain_robot_r`. |
 | `constrain_robot_r(state, robot)` | Pushes any robot (P1 or P2) out of cached obstacle rect. Used for P2 in 1v1 mode. |
 | `constrain_robot_robot(state)` | Pushes both robots apart if their 60×60 rects overlap (1v1 only). Symmetric half-push on smallest overlap axis, clamped to field. |
 | `update_intake_heat_p2(state, dt)` | P2 intake motor heat management — identical logic to `update_intake_heat` but uses P2 fields. |
@@ -845,9 +741,7 @@ Processes all Pygame events once per frame. Supports keyboard and gamepad simult
 - When stuck: robot cycles through escape directions, avoiding the obstacle rect
 
 **Obstacle routing:**
-- `_routing_side` / `_routing_side_lock` — tracks which side of the obstacle to route around
-- `_CORNER_HYSTERESIS = 30.0` / `_CORNER_EXTRA = 25.0` — corner routing parameters
-- `_move_toward()` handles obstacle avoidance: detects if the path crosses the expanded obstacle rect, routes under it via safe corridor
+- `_move_toward()` handles obstacle avoidance: detects if the path crosses the expanded obstacle rect, snaps targets inside obstacles to the nearest edge, then finds the best corner to route around if the path is blocked (cost heuristic penalizes corners whose paths still cross the obstacle)
 
 **FSM states:**
 | State | Behavior |

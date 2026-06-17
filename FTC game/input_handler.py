@@ -351,8 +351,8 @@ def handle_input(state, dt, events=None):
                     r.vy = ly * r.speed
                     r.x += r.vx * dt
                     r.y += r.vy * dt
-                    r.x = clamp(r.x, FX, FX + FS)
-                    r.y = clamp(r.y, FY, FY + FS)
+                    r.x = clamp(r.x, FX + 30, FX + FS - 30)
+                    r.y = clamp(r.y, FY + 30, FY + FS - 30)
                 else:
                     fx = math.sin(r.angle)
                     fy = -math.cos(r.angle)
@@ -362,8 +362,8 @@ def handle_input(state, dt, events=None):
                     r.vy = (fy * -ly + sy * lx) * r.speed
                     r.x += r.vx * dt
                     r.y += r.vy * dt
-                    r.x = clamp(r.x, FX, FX + FS)
-                    r.y = clamp(r.y, FY, FY + FS)
+                    r.x = clamp(r.x, FX + 30, FX + FS - 30)
+                    r.y = clamp(r.y, FY + 30, FY + FS - 30)
             # Gamepad rotation
             rx = joy.get_axis(2)
             if abs(rx) > 0.15:
@@ -404,7 +404,7 @@ def handle_input(state, dt, events=None):
             state.intake_active = False
 
         if state.intake_active:
-            _try_pickup(state, r, _in_front)
+            _try_pickup(state, r, _in_front, CONFIG["pickup_radius_human"])
 
     # 1v1: use only the assigned device
     elif p1_dev == "keyboard":
@@ -425,7 +425,7 @@ def handle_input(state, dt, events=None):
             state.intake_active = False
 
         if state.intake_active:
-            _try_pickup(state, r, _in_front)
+            _try_pickup(state, r, _in_front, CONFIG["pickup_radius_human"])
 
     elif isinstance(p1_dev, str) and p1_dev.startswith("gamepad"):
         joy_idx = int(p1_dev[-1])
@@ -478,8 +478,8 @@ def _handle_field_drive(r, keys, dt, state):
         r.vy = dy * r.speed
         r.x += dx * r.speed * dt
         r.y += dy * r.speed * dt
-        r.x = clamp(r.x, FX, FX + FS)
-        r.y = clamp(r.y, FY, FY + FS)
+        r.x = clamp(r.x, FX + 30, FX + FS - 30)
+        r.y = clamp(r.y, FY + 30, FY + FS - 30)
     rot = 0.0
     if _key_held(state, "Rotate Left", keys):
         rot -= 1
@@ -517,8 +517,8 @@ def _handle_robot_drive(r, keys, dt, state):
     if r.vx != 0 or r.vy != 0:
         r.x += r.vx * dt
         r.y += r.vy * dt
-        r.x = clamp(r.x, FX, FX + FS)
-        r.y = clamp(r.y, FY, FY + FS)
+        r.x = clamp(r.x, FX + 30, FX + FS - 30)
+        r.y = clamp(r.y, FY + 30, FY + FS - 30)
 
 
 def _launch_held(state, r=None, team=None):
@@ -534,22 +534,29 @@ def _launch_held(state, r=None, team=None):
     else:
         from_zone = state.in_launch_zone(r.x, r.y)
     full = len(r.holding) == CONFIG["max_hold"]
-    gr = state.goal_rect()
+    team_id = "p2" if r is getattr(state, 'robot2', None) else "p1"
+    if state.game_mode == "1v1":
+        rr = state.ramp_rect(team=team_id)
+    else:
+        rr = state.ramp_rect()
     held = list(r.holding)
     r.holding.clear()
-    team_id = "p2" if r is getattr(state, 'robot2', None) else "p1"
     for a in held:
         ox = random.uniform(-6, 6)
         oy = random.uniform(-6, 6)
         state.flying.append(FlyingArtifact(
-            r.x + ox, r.y + oy, gr.centerx, gr.centery, a.color,
+            r.x + ox, r.y + oy, rr.centerx, rr.centery, a.color,
             scoring=from_zone, full_set=full, team=team_id
         ))
 
 
 def _toggle_gate(state, r, override_range=None):
     """Toggle the gate open if robot is close enough."""
-    gt = state.gate_rect()
+    team_id = "p2" if (state.robot2 is not None and r is state.robot2) else "p1"
+    if state.game_mode == "1v1":
+        gt = state.gate_rect(team=team_id)
+    else:
+        gt = state.gate_rect()
 
     # Use the override if provided by AI, otherwise default to human config
     check_range = override_range if override_range is not None else CONFIG["gate_range"]
@@ -561,7 +568,7 @@ def _toggle_gate(state, r, override_range=None):
                 team.gate_open = True
                 team.gate_timer = CONFIG["gate_open_duration"]
                 cleared = team.clear_ramp()
-                positions = get_ramp_scatter_positions(state)
+                positions = get_ramp_scatter_positions(state, team_id)
                 for c in cleared:
                     tx, ty = random.choice(positions)
                     a = Artifact(tx, ty, c,
@@ -570,9 +577,11 @@ def _toggle_gate(state, r, override_range=None):
                     state.artifacts.append(a)
 
 
-def _try_pickup(state, r, in_front):
+def _try_pickup(state, r, in_front, radius=None):
     """Attempt to pick up the nearest artifact in front of the robot."""
-    a = state.nearest_artifact(r.x, r.y, CONFIG["pickup_radius"])
+    if radius is None:
+        radius = CONFIG["pickup_radius"]
+    a = state.nearest_artifact(r.x, r.y, radius)
     if a and r.can_pickup() and in_front(a.x, a.y):
         a.on_field = False
         r.holding.append(a)
@@ -606,8 +615,8 @@ def _handle_gamepad(state, r, joy, events, dt, in_front):
         r.vy = mvy * r.speed
         r.x += mvx * r.speed * dt
         r.y += mvy * r.speed * dt
-        r.x = clamp(r.x, FX, FX + FS)
-        r.y = clamp(r.y, FY, FY + FS)
+        r.x = clamp(r.x, FX + 30, FX + FS - 30)
+        r.y = clamp(r.y, FY + 30, FY + FS - 30)
     lt = _gamepad_axis("Launch", joy, state) or _gamepad_button("Launch", events, state, joy.get_id())
     rt = _gamepad_axis("Intake", joy, state) or _gamepad_button_held("Intake", joy, state)
     jid = joy.get_id()
@@ -626,7 +635,7 @@ def _handle_gamepad(state, r, joy, events, dt, in_front):
         state.intake_active = False
 
     if state.intake_active:
-        _try_pickup(state, r, in_front)
+        _try_pickup(state, r, in_front, CONFIG["pickup_radius_human"])
 
     if _gamepad_button("Gate", events, state, jid) or _gamepad_axis("Gate", joy, state):
         _toggle_gate(state, r)

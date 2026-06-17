@@ -102,7 +102,7 @@ def _handle_p2_keyboard(state, r, keys, events, dt):
         state.intake_active2 = False
 
     if state.intake_active2:
-        _try_pickup(state, r, in_front)
+        _try_pickup(state, r, in_front, CONFIG["pickup_radius_human"])
 
 
 def _handle_p2_field_drive(r, key_held_fn, dt):
@@ -124,8 +124,8 @@ def _handle_p2_field_drive(r, key_held_fn, dt):
         r.vy = dy * r.speed
         r.x += dx * r.speed * dt
         r.y += dy * r.speed * dt
-        r.x = clamp(r.x, FX, FX + FS)
-        r.y = clamp(r.y, FY, FY + FS)
+        r.x = clamp(r.x, FX + 30, FX + FS - 30)
+        r.y = clamp(r.y, FY + 30, FY + FS - 30)
     rot = 0.0
     if key_held_fn("Rotate Left"):
         rot -= 1
@@ -163,8 +163,8 @@ def _handle_p2_robot_drive(r, key_held_fn, dt):
     if r.vx != 0 or r.vy != 0:
         r.x += r.vx * dt
         r.y += r.vy * dt
-        r.x = clamp(r.x, FX, FX + FS)
-        r.y = clamp(r.y, FY, FY + FS)
+        r.x = clamp(r.x, FX + 30, FX + FS - 30)
+        r.y = clamp(r.y, FY + 30, FY + FS - 30)
 
 
 def _handle_p2_gamepad(state, r, joy, events, dt):
@@ -196,8 +196,8 @@ def _handle_p2_gamepad(state, r, joy, events, dt):
         r.vy = mvy * r.speed
         r.x += mvx * r.speed * dt
         r.y += mvy * r.speed * dt
-        r.x = clamp(r.x, FX, FX + FS)
-        r.y = clamp(r.y, FY, FY + FS)
+        r.x = clamp(r.x, FX + 30, FX + FS - 30)
+        r.y = clamp(r.y, FY + 30, FY + FS - 30)
 
     jid = joy.get_id()
 
@@ -252,7 +252,7 @@ def _handle_p2_gamepad(state, r, joy, events, dt):
         return dot > math.cos(half_cone)
 
     if state.intake_active2:
-        _try_pickup(state, r, in_front)
+        _try_pickup(state, r, in_front, CONFIG["pickup_radius_human"])
 
     if _gp_button("Gate") or _gp_axis("Gate"):
         _toggle_gate(state, r)

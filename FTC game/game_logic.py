@@ -25,18 +25,24 @@ _physics_lock = threading.Lock()
 _physics_running = False
 _physics_thread = None
 
-# Cached merged goal+depot obstacle rect — rebuilt on game reset, not per frame.
+# Cached obstacle rects — rebuilt on game reset, not per frame.
 _cached_obs_rect = None
+_cached_obs_rects = []
 
 
 def rebuild_obstacle_cache(state):
-    """Recompute the merged goal+depot obstacle rect. Call on game reset only."""
-    global _cached_obs_rect
+    """Recompute obstacle rects. Call on game reset only."""
+    global _cached_obs_rect, _cached_obs_rects
     g = state.goal_rect()
     d = state.depot_rect()
-    _cached_obs_rect = pygame.Rect(g.left, g.top, g.w, d.bottom - g.top)
+    if d.w == 0 and d.h == 0:
+        _cached_obs_rect = pygame.Rect(g.left, g.top, g.w, g.h)
+    else:
+        _cached_obs_rect = pygame.Rect(g.left, g.top, g.w, d.bottom - g.top)
+    _cached_obs_rects = state.all_obstacle_rects()
     import game_logic_p2
     game_logic_p2._set_obs_rect(_cached_obs_rect)
+    game_logic_p2._set_obs_rects(_cached_obs_rects)
 
 
 def _get_obs_rect():
@@ -136,7 +142,7 @@ def update_artifact_physics(state, dt):
     robot_vx = robot.vx
     robot_vy = robot.vy
 
-    obs_rect = _get_obs_rect()
+    obs_list = _cached_obs_rects
 
     active = [a for a in state.artifacts if a.on_field and a.respawn_timer <= 0 and a not in robot.holding]
 
@@ -186,42 +192,42 @@ def update_artifact_physics(state, dt):
             ay = field_bottom
             avy = -abs(avy) * wall_bounce
 
-        # Goal+depot obstacle (cached rect)
-        rect = obs_rect
-        if rect.collidepoint(ax, ay):
-            dl = ax - rect.left
-            dr = rect.right - ax
-            dt_val = ay - rect.top
-            db = rect.bottom - ay
-            mind = min(dl, dr, dt_val, db)
-            if mind == dl:
-                ax = rect.left - R
-                avx = -abs(avx) * wall_bounce
-            elif mind == dr:
-                ax = rect.right + R
-                avx = abs(avx) * wall_bounce
-            elif mind == dt_val:
-                ay = rect.top - R
-                avy = -abs(avy) * wall_bounce
+        # Obstacle collisions (ramp, depot, triangle, strip)
+        for rect in obs_list:
+            if rect.collidepoint(ax, ay):
+                dl = ax - rect.left
+                dr = rect.right - ax
+                dt_val = ay - rect.top
+                db = rect.bottom - ay
+                mind = min(dl, dr, dt_val, db)
+                if mind == dl:
+                    ax = rect.left - R
+                    avx = -abs(avx) * wall_bounce
+                elif mind == dr:
+                    ax = rect.right + R
+                    avx = abs(avx) * wall_bounce
+                elif mind == dt_val:
+                    ay = rect.top - R
+                    avy = -abs(avy) * wall_bounce
+                else:
+                    ay = rect.bottom + R
+                    avy = abs(avy) * wall_bounce
             else:
-                ay = rect.bottom + R
-                avy = abs(avy) * wall_bounce
-        else:
-            cx = clamp(ax, rect.left, rect.right)
-            cy = clamp(ay, rect.top, rect.bottom)
-            gdx = ax - cx
-            gdy = ay - cy
-            gdist_sq = gdx * gdx + gdy * gdy
-            if gdist_sq < R * R and gdist_sq > 0:
-                gd = math.sqrt(gdist_sq)
-                gnx, gny = gdx / gd, gdy / gd
-                overlap = R - gd
-                ax += gnx * overlap
-                ay += gny * overlap
-                gdot = avx * gnx + avy * gny
-                if gdot < 0:
-                    avx -= (1 + wall_bounce) * gdot * gnx
-                    avy -= (1 + wall_bounce) * gdot * gny
+                cx = clamp(ax, rect.left, rect.right)
+                cy = clamp(ay, rect.top, rect.bottom)
+                gdx = ax - cx
+                gdy = ay - cy
+                gdist_sq = gdx * gdx + gdy * gdy
+                if gdist_sq < R * R and gdist_sq > 0:
+                    gd = math.sqrt(gdist_sq)
+                    gnx, gny = gdx / gd, gdy / gd
+                    overlap = R - gd
+                    ax += gnx * overlap
+                    ay += gny * overlap
+                    gdot = avx * gnx + avy * gny
+                    if gdot < 0:
+                        avx -= (1 + wall_bounce) * gdot * gnx
+                        avy -= (1 + wall_bounce) * gdot * gny
 
         a.x = ax
         a.y = ay

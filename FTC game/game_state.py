@@ -255,15 +255,17 @@ class GameState:
                         cx + math.cos(a) * 16, ry + math.sin(a) * 16, c, zone="spike", index=idx
                     ))
                     idx += 1
-        lx, ly = FX + 15, FY + 15
+        lr = self.loading_rect()
+        lx, ly = lr.x + 10, lr.y + 10
         for ai, c in enumerate(["P", "G", "P"]):
-            self.artifacts.append(Artifact(lx + 20 + ai * 28, ly + 35, c, zone="loading", index=idx))
+            self.artifacts.append(Artifact(lx + 20 + ai * 28, ly + 25, c, zone="loading", index=idx))
             idx += 1
         colors = ["P"] * 4 + ["G"] * 2
         random.shuffle(colors)
+        lr = self.loading_rect()
         for ai, c in enumerate(colors):
             self.artifacts.append(Artifact(
-                FX + 6 + (ai % 3) * 24, FY + 180 + (ai // 3) * 26, c, zone="alliance", index=idx
+                lr.x + 10 + (ai % 3) * 28, lr.y + 20 + (ai // 3) * 28, c, zone="alliance", index=idx
             ))
             idx += 1
 
@@ -271,71 +273,151 @@ class GameState:
         """Add mirrored spike, loading, and alliance artifacts for P2's side."""
         p2_extras = []
         for art in list(self.artifacts):
-            if art.zone in ("spike", "loading"):
+            if art.zone == "spike":
                 mirrored_x = FX + FS - (art.x - FX)
                 p2_extras.append(Artifact(
                     x=mirrored_x, y=art.y,
                     color=art.color, on_field=True,
                     zone=art.zone, index=art.index
                 ))
+            elif art.zone == "loading":
+                lr2 = self.loading_rect2()
+                p2_extras.append(Artifact(
+                    x=art.x + (lr2.x - self.loading_rect().x),
+                    y=art.y + (lr2.y - self.loading_rect().y),
+                    color=art.color, on_field=True,
+                    zone=art.zone, index=art.index
+                ))
         colors = ["P"] * 4 + ["G"] * 2
         random.shuffle(colors)
+        lr2 = self.loading_rect2()
         for ai, c in enumerate(colors):
             p2_extras.append(Artifact(
-                FX + FS - 6 - (ai % 3) * 24, FY + 180 + (ai // 3) * 26,
+                lr2.x + 10 + (ai % 3) * 28, lr2.y + 20 + (ai // 3) * 28,
                 c, zone="alliance", index=ai
             ))
         self.artifacts.extend(p2_extras)
 
     def goal_rect(self):
         """Return the goal rectangle."""
+        if self.game_mode == "1v1":
+            return self.ramp_rect(team="p1")
         return pygame.Rect(FX + FS // 2 - CONFIG["goal_w"] // 2, FY,
                            CONFIG["goal_w"], CONFIG["goal_h"])
 
-    def ramp_rect(self):
-        """Return the ramp rectangle below the goal."""
+    def goal_rect_p2(self):
+        """P2 goal target for 1v1 only (left-side vertical ramp)."""
+        if self.game_mode == "1v1":
+            return self.ramp_rect(team="p2")
+        return pygame.Rect(FX + FS - 5 - CONFIG["goal_w"], FY + 5,
+                           CONFIG["goal_w"], CONFIG["ramp_h"])
+
+    def ramp_rect(self, team=None):
+        """Return the ramp rectangle. In 1v1, ramps are slim vertical bars touching the walls."""
+        if self.game_mode == "1v1":
+            if team == "p2":
+                return pygame.Rect(FX + FS - 18, FY + 90, 18, 284)
+            else:
+                return pygame.Rect(FX, FY + 90, 18, 284)
         g = self.goal_rect()
         return pygame.Rect(g.x, g.bottom + 5, g.w, CONFIG["ramp_h"])
 
-    def depot_rect(self):
-        """Return the depot rectangle below the ramp."""
+    def depot_rect(self, team=None):
+        """Return the depot rectangle. In 1v1, depot is removed."""
+        if self.game_mode == "1v1":
+            return pygame.Rect(0, 0, 0, 0)
         g = self.goal_rect()
         return pygame.Rect(g.x, g.bottom + 5 + CONFIG["ramp_h"] + 3, g.w, CONFIG["depot_h"])
 
-    def gate_rect(self):
-        """Return the gate rectangle on the right side of the ramp."""
-        r = self.ramp_rect()
+    def gate_rect(self, team=None):
+        """Return the gate rectangle. In 1v1, gates are at the bottom of vertical ramps."""
+        if self.game_mode == "1v1":
+            ramp_bottom = FY + 90 + 284
+            if team == "p2":
+                return pygame.Rect(FX + FS - 18, ramp_bottom, 18, 14)
+            else:
+                return pygame.Rect(FX, ramp_bottom, 18, 14)
+        r = self.ramp_rect(team=team)
         return pygame.Rect(r.right - 18, r.y, 18, r.h)
+
+    def all_obstacle_rects(self):
+        """Return all solid obstacle rects for collision (robot + artifact physics)."""
+        if self.game_mode == "1v1":
+            strip_h = 91
+            tri_w, tri_h = 90, 90
+            ramp_y = FY + 90
+            ramp_h = 284
+            return [
+                # P1 (left side)
+                pygame.Rect(FX, FY, 18, strip_h),
+                pygame.Rect(FX + 18, FY, tri_w, tri_h),
+                pygame.Rect(FX, ramp_y, 18, ramp_h),
+                # P2 (right side)
+                pygame.Rect(FX + FS - 18, FY, 18, strip_h),
+                pygame.Rect(FX + FS - 18 - tri_w, FY, tri_w, tri_h),
+                pygame.Rect(FX + FS - 18, ramp_y, 18, ramp_h),
+            ]
+        return [self.goal_rect(), self.depot_rect()]
 
     def loading_rect(self):
         """Return the loading zone rectangle."""
+        if self.game_mode == "1v1":
+            return pygame.Rect(FX + 5,
+                               FY + FS - CONFIG["loading_zone_size"] - 5,
+                               CONFIG["loading_zone_size"],
+                               CONFIG["loading_zone_size"])
         return pygame.Rect(FX, FY, CONFIG["loading_zone_size"], CONFIG["loading_zone_size"])
 
     def base_rect(self):
-        """Return the base/parking zone rectangle (left-center of field)."""
-        return pygame.Rect(FX + 10, FY + FS // 2 - CONFIG["base_size"] // 2,
+        """Return the base/parking zone rectangle."""
+        if self.game_mode == "1v1":
+            return pygame.Rect(FX + 105, FY + FS // 2 - CONFIG["base_size"] // 2 + 150,
+                               CONFIG["base_size"], CONFIG["base_size"])
+        return pygame.Rect(FX + 110, FY + FS // 2 - CONFIG["base_size"] // 2 + 150,
                            CONFIG["base_size"], CONFIG["base_size"])
 
     def base_rect2(self):
-        """P2 base zone — horizontal mirror of base_rect() (right-center)."""
-        r = self.base_rect()
-        mirrored_left = FX + FS - (r.left - FX) - r.width
-        return pygame.Rect(mirrored_left, r.top, r.width, r.height)
+        """P2 base zone — right-center of field in 1v1."""
+        return pygame.Rect(FX + FS - CONFIG["base_size"] - 105,
+                           FY + FS // 2 - CONFIG["base_size"] // 2 + 150,
+                           CONFIG["base_size"], CONFIG["base_size"])
 
     def loading_rect2(self):
-        """P2 loading zone — horizontal mirror of loading_rect() (top-right)."""
-        r = self.loading_rect()
-        mirrored_left = FX + FS - (r.left - FX) - r.width
-        return pygame.Rect(mirrored_left, r.top, r.width, r.height)
+        """P2 loading zone — bottom-right of field in 1v1."""
+        return pygame.Rect(FX + FS - CONFIG["loading_zone_size"] - 5,
+                           FY + FS - CONFIG["loading_zone_size"] - 5,
+                           CONFIG["loading_zone_size"],
+                           CONFIG["loading_zone_size"])
 
     def in_launch_zone2(self, x, y):
-        """Same logic as in_launch_zone but checks P2's mirrored zones (horizontal mirror)."""
-        mirrored_x = FX + FS - (x - FX)
-        return self.in_launch_zone(mirrored_x, y)
+        """Check if a point is within P2's launch zone (base, top triangle, shooting zone)."""
+        if self.base_rect2().collidepoint(x, y):
+            return True
+        fx, fy = x - FX, y - FY
+        if 0 <= fy <= 300:
+            left = 100 + (260 - 100) * (fy / 300)
+            right = 620 - (620 - 460) * (fy / 300)
+            if left <= fx <= right:
+                return True
+        top, bl, br = self._shooting_zone_detect_triangle()
+        if _point_in_triangle((x, y), top, bl, br):
+            return True
+        return False
 
     def shooting_zone_triangle(self):
         """Return the three vertices of the shooting zone triangle (right-angle isosceles, hypotenuse at bottom)."""
         hyp = CONFIG["shooting_zone_size"]
+        height = hyp / 2
+        cx = FX + FS // 2
+        cy = FY + FS - 5 - height / 3
+        top = (cx, cy - 2 * height / 3)
+        bl = (cx - hyp / 2, cy + height / 3)
+        br = (cx + hyp / 2, cy + height / 3)
+        return (top, bl, br)
+
+    def _shooting_zone_detect_triangle(self):
+        """Return detection triangle (larger than visual shooting zone)."""
+        hyp = CONFIG["shooting_zone_detect_size"]
         height = hyp / 2
         cx = FX + FS // 2
         cy = FY + FS - 5 - height / 3
@@ -354,7 +436,22 @@ class GameState:
             right = 620 - (620 - 460) * (fy / 300)
             if left <= fx <= right:
                 return True
-        top, bl, br = self.shooting_zone_triangle()
+        top, bl, br = self._shooting_zone_detect_triangle()
+        if _point_in_triangle((x, y), top, bl, br):
+            return True
+        return False
+
+    def in_launch_zone2(self, x, y):
+        """Check if a point is within P2's launch zone (base, top triangle, shooting zone)."""
+        if self.base_rect2().collidepoint(x, y):
+            return True
+        fx, fy = x - FX, y - FY
+        if 0 <= fy <= 300:
+            left = 100 + 260 * (fy / 300)
+            right = 620 - 260 * (fy / 300)
+            if left <= fx <= right:
+                return True
+        top, bl, br = self._shooting_zone_detect_triangle()
         if _point_in_triangle((x, y), top, bl, br):
             return True
         return False
@@ -371,8 +468,22 @@ class GameState:
         return best
 
 
-def get_ramp_scatter_positions(state):
-    """Return all scatter positions (spike-mark + loading zone for both sides)."""
+def get_ramp_scatter_positions(state, team_id=None):
+    """Return scatter positions for gate-open release.
+
+    In 1v1, team_id determines which loading zone artifacts go to:
+      "p1" → left loading zone only, "p2" → right loading zone only.
+    In solo, returns spike + both loading zones (team_id ignored).
+    """
+    if state.game_mode == "1v1":
+        positions = []
+        if team_id == "p2":
+            lr = state.loading_rect2()
+        else:
+            lr = state.loading_rect()
+        for ai in range(6):
+            positions.append((lr.x + 10 + (ai % 3) * 28, lr.y + 20 + (ai // 3) * 28))
+        return positions
     spike_positions = []
     cols = [FX + FS // 2 - 50]
     rows = [FY + 280, FY + 360, FY + 440]

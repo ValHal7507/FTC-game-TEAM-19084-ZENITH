@@ -104,7 +104,7 @@ CHAOS_SEQUENCE = [
     pygame.K_LEFT, pygame.K_RIGHT, pygame.K_LEFT, pygame.K_RIGHT,
     pygame.K_z, pygame.K_x,
 ]
-CHAOS_SPEED_MULT  = 2.0
+CHAOS_SPEED_MULT  = 1.0
 
 CHAOS_BG          = (10,   0,  25)
 CHAOS_GRID        = (90,   0, 130)
@@ -126,10 +126,11 @@ CONFIG = {
     "fps": 144,
     "teleop_time": 120,
     "endgame_time": 20,
-    "robot_speed": 280,
+    "robot_speed": 560,
     "robot_size": 60,
     "flying_speed": 350,
     "pickup_radius": 45,
+    "pickup_radius_human": 65,
     "ai_intake_start_distance": 85,
     "pickup_cone_angle": 120,
     "rotation_speed": 300,
@@ -145,12 +146,13 @@ CONFIG = {
     "artifact_artifact_bounce": 0.50,
     "artifact_min_speed": 4.0,
     "robot_push_force": 600.0,
-    "artifact_radius": 7,
+    "artifact_radius": 10,
     "goal_w": 130,
     "goal_h": 142,
     "loading_zone_size": 100,
     "base_size": 80,
     "shooting_zone_size": 220,
+    "shooting_zone_detect_size": 320,
     "spike_cols": 1,
     "spike_rows": 3,
     "ramp_h": 14,

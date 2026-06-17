@@ -140,8 +140,8 @@ Scopul este sa colectezi artefacte de pe teren, sa le clasifici pe rampa si sa l
 ### Rampa si clasificarea
 
 - Cand un artefact este lansat din zona de lansare, acesta este plasat pe rampa in sloturi:
-  - Daca robotul avea 3 artefacte → artefactele se clasifica direct (+3 puncte fiecare)
-  - Daca robotul avea mai putin de 3 → artefactele merg in depot/overflow (+1 punct fiecare)
+  - Daca rampa are sloturi libere → artefactul se clasifica pe rampa (+3 puncte fiecare)
+  - Daca rampa e plina → artefactul merge in depot/overflow (+1 punct fiecare)
 - Rampa are 9 sloturi (3 culori x 3)
 - La sfarsitul meciului, sloturile care corespund motivului (motif) primesc +2 puncte fiecare
 
@@ -149,7 +149,7 @@ Scopul este sa colectezi artefacte de pe teren, sa le clasifici pe rampa si sa l
 
 - Apropie robotul de poarta (linia de pe teren)
 - Apasa `T` (tastatura) sau `X` (controler) pentru a deschide
-- Cand poarta se deschide, toate artefactele de pe rampa sunt **teleportate** pe teren (la pozitii aleatoare)
+- Cand poarta se deschide, toate artefactele de pe rampa sunt **teleportate** pe teren (la pozitii aleatoare). In 1v1, fiecare poarta trimite artefactele doar in zona de incarcare a echipei corespunzatoare (poarta albastra → zona stanga, poarta rosie → zona dreapta)
 - Poarta se inchide automat dupa 2 secunde
 - Util pentru a recicla artefacte cand rampa e plina
 
