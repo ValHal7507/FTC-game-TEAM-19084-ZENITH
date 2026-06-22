@@ -142,7 +142,7 @@ CONFIG = {
     "respawn_delay": 5.0,
     "artifact_friction": 0.08,
     "artifact_bounce": 0.45,
-    "artifact_robot_bounce": 0.90,
+    "artifact_robot_bounce": 0.40,
     "artifact_artifact_bounce": 0.50,
     "artifact_min_speed": 4.0,
     "robot_push_force": 600.0,

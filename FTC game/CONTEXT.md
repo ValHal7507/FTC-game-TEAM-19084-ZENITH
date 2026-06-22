@@ -53,7 +53,7 @@ No external dependencies beyond Python stdlib and `pygame`.
 
 ### `main.py` — Entry Point
 
-- Initializes Pygame, creates a **resizable window** (`pygame.RESIZABLE`) titled `"FTC DECODE — Robot simulator by TEAM ZENITH 19084"`
+- Initializes Pygame, creates a **resizable window** (`pygame.RESIZABLE`) titled `"FTC DECODE — Robot simulator by TEAM ZENITH 19084"`, then **maximizes it** via `ctypes.windll.user32.ShowWindow(..., 3)` so it fills the screen while keeping the taskbar and title bar visible
 - **Window icon**: Loads `Zenith_logo.png` from the project directory via `pygame.display.set_icon()`. Falls back silently if file is missing or load fails.
 - Creates a fixed-size **virtual canvas** (`1050 × 778`) that all drawing targets
 - **App-level screen routing**: Three top-level screens — Mode Select, Controller Assign, Game Loop. `app_screen` variable (`"mode_select"`, `"controller_assign"`, `"game"`) controls which loop runs.
@@ -63,13 +63,14 @@ No external dependencies beyond Python stdlib and `pygame`.
 - Uses `clock.tick_busy_loop(fps)` for precise frame pacing
 - Calls `init_drawing()` after `pygame.init()` to initialize fonts (must happen after pygame init)
 - Detects and initializes joysticks on startup via `input_handler.init_joysticks()`
+- Uses `ctypes.windll.user32.ShowWindow` to maximize the window on startup (taskbar and title bar remain visible)
 - On return from mode (result `"menu"`), loops back to mode-select screen
 
 **Functions:**
 | Function | Signature | Behavior |
 |---|---|---|
 | `_blit_scaled` | `(canvas, screen)` | Scale virtual canvas to window with letterboxing (aspect-ratio preservation) |
-| `main` | `()` | Full app lifecycle: init → menu loop → dispatch → cleanup |
+| `main` | `()` | Full app lifecycle: init → menu loop → dispatch → cleanup. Window is maximized on startup via `ctypes`. |
 
 ### `mode_solo.py` — Solo Game Loop
 
@@ -249,7 +250,7 @@ Font access: uses `import drawing as _drawing` then `_drawing.f_huge.render(...)
 | `respawn_delay` | 5.0 | Artifact respawn delay (unused) |
 | `artifact_friction` | 0.08 | Exponential drag per frame (v *= f^dt) |
 | `artifact_bounce` | 0.45 | Wall/structure restitution |
-| `artifact_robot_bounce` | 0.90 | Robot-artifact collision restitution |
+| `artifact_robot_bounce` | 0.40 | Robot-artifact collision restitution |
 | `artifact_artifact_bounce` | 0.50 | Artifact-artifact restitution |
 | `artifact_min_speed` | 4.0 | Speed below which artifacts stop |
 | `robot_push_force` | 600.0 | Push force when robot contacts artifact |

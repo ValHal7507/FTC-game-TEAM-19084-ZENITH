@@ -3,6 +3,7 @@ FTC DECODE (2025-2026) Match Simulator — Entry point.
 Thin dispatcher: init, menu routing, dispatch to mode files.
 """
 
+import ctypes
 import os
 import sys
 import pygame
@@ -42,6 +43,7 @@ def main():
             pass
     win = pygame.display.set_mode((VW, VH), pygame.RESIZABLE)
     pygame.display.set_caption("FTC DECODE — Robot simulator by TEAM ZENITH 19084")
+    ctypes.windll.user32.ShowWindow(pygame.display.get_wm_info()['window'], 3)
     render_surf = pygame.Surface((VW, VH))
     clock = pygame.time.Clock()
     init_drawing()
